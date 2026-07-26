@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: src
+      development_dependencies:
+        description: Mapa JSON pacote/branch para validar PRs coordenados antes das tags
+        required: false
+        type: string
+        default: "{}"
 
 permissions:
   contents: read
@@ -64,6 +69,22 @@ jobs:
 
       - name: Validar manifesto Composer
         run: composer validate --strict --no-check-publish
+
+      - name: Configurar dependencias de PRs coordenados
+        if: inputs.development_dependencies != '{}'
+        env:
+          DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r package branch; do
+            if [[ ! "$package" =~ ^elavora/[a-z0-9-]+$ ]] || [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Dependencia de desenvolvimento invalida: $package=$branch"
+              exit 1
+            fi
+            repository="${package#elavora/}"
+            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
 
       - name: Resolver dependencias minimas
         if: matrix.dependencies == 'lowest'
@@ -118,6 +139,21 @@ jobs:
           coverage: none
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
+      - name: Configurar dependencias de PRs coordenados
+        if: inputs.development_dependencies != '{}'
+        env:
+          DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r package branch; do
+            if [[ ! "$package" =~ ^elavora/[a-z0-9-]+$ ]] || [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Dependencia de desenvolvimento invalida: $package=$branch"
+              exit 1
+            fi
+            repository="${package#elavora/}"
+            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
       - run: composer test
 
@@ -153,6 +189,21 @@ jobs:
           coverage: none
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
+      - name: Configurar dependencias de PRs coordenados
+        if: inputs.development_dependencies != '{}'
+        env:
+          DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r package branch; do
+            if [[ ! "$package" =~ ^elavora/[a-z0-9-]+$ ]] || [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Dependencia de desenvolvimento invalida: $package=$branch"
+              exit 1
+            fi
+            repository="${package#elavora/}"
+            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
       - run: composer test
 
@@ -189,6 +240,21 @@ jobs:
           coverage: none
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
+      - name: Configurar dependencias de PRs coordenados
+        if: inputs.development_dependencies != '{}'
+        env:
+          DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r package branch; do
+            if [[ ! "$package" =~ ^elavora/[a-z0-9-]+$ ]] || [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Dependencia de desenvolvimento invalida: $package=$branch"
+              exit 1
+            fi
+            repository="${package#elavora/}"
+            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
       - run: composer test
 
@@ -218,6 +284,21 @@ jobs:
           coverage: none
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
+      - name: Configurar dependencias de PRs coordenados
+        if: inputs.development_dependencies != '{}'
+        env:
+          DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r package branch; do
+            if [[ ! "$package" =~ ^elavora/[a-z0-9-]+$ ]] || [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Dependencia de desenvolvimento invalida: $package=$branch"
+              exit 1
+            fi
+            repository="${package#elavora/}"
+            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
       - run: composer test
 
@@ -234,6 +315,21 @@ jobs:
           coverage: pcov
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
+      - name: Configurar dependencias de PRs coordenados
+        if: inputs.development_dependencies != '{}'
+        env:
+          DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r package branch; do
+            if [[ ! "$package" =~ ^elavora/[a-z0-9-]+$ ]] || [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Dependencia de desenvolvimento invalida: $package=$branch"
+              exit 1
+            fi
+            repository="${package#elavora/}"
+            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
       - name: Gerar cobertura
         run: vendor/bin/phpunit --coverage-clover=coverage.xml --coverage-filter=${{ inputs.coverage_path }}

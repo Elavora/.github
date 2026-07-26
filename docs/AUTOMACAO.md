@@ -23,6 +23,17 @@ lint, analise estatica, cobertura ou integracao configurada falhar.
 Os pacotes devem chamar esses workflows por SHA completo. Actions de terceiros
 tambem ficam fixadas por SHA e sao atualizadas pelo Dependabot.
 
+## PRs coordenados
+
+Durante uma alteracao que ainda nao possui tags nas dependencias internas, o
+caller pode informar `development_dependencies` como um objeto JSON de
+pacote para branch. O gate configura apenas repositorios `elavora/*`, valida o
+formato da branch e usa alias `1.0.x-dev` sem alterar o manifesto versionado.
+
+Esse input deve ser condicionado a branch do trabalho. Depois que as tags
+estaveis estiverem disponiveis, o valor precisa ser `{}` para que o Composer
+valide somente releases publicadas.
+
 ## Servicos
 
 O workflow de qualidade aceita um servico por pacote:
