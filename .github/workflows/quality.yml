@@ -1,0 +1,283 @@
+name: Qualidade Composer reutilizavel
+
+on:
+  workflow_call:
+    inputs:
+      extensions:
+        description: Extensoes PHP adicionais, separadas por virgula
+        required: false
+        type: string
+        default: json
+      service:
+        description: Servico de integracao opcional
+        required: false
+        type: string
+        default: none
+      ini_values:
+        description: Valores adicionais de php.ini
+        required: false
+        type: string
+        default: ""
+      coverage_min:
+        description: Percentual minimo de cobertura; zero desativa o job
+        required: false
+        type: number
+        default: 0
+      coverage_path:
+        description: Diretorio de codigo considerado na cobertura
+        required: false
+        type: string
+        default: src
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: PHP ${{ matrix.php }} - ${{ matrix.dependencies }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: "8.3"
+            dependencies: lowest
+          - php: "8.3"
+            dependencies: current
+          - php: "8.4"
+            dependencies: current
+          - php: "8.5"
+            dependencies: current
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Configurar PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:2
+          coverage: none
+          extensions: ${{ inputs.extensions }}
+          ini-values: ${{ inputs.ini_values }}
+
+      - name: Validar manifesto Composer
+        run: composer validate --strict --no-check-publish
+
+      - name: Resolver dependencias minimas
+        if: matrix.dependencies == 'lowest'
+        run: composer update --prefer-lowest --prefer-stable --no-interaction --no-progress --prefer-dist
+
+      - name: Resolver dependencias atuais
+        if: matrix.dependencies == 'current'
+        run: composer update --no-interaction --no-progress --prefer-dist
+
+      - name: Auditar dependencias
+        run: composer audit --abandoned=fail
+
+      - name: Executar verificacoes
+        shell: bash
+        run: |
+          if composer run-script --list | grep -q '^  check'; then
+            composer check
+          else
+            composer test
+          fi
+
+      - name: Executar analise estatica
+        shell: bash
+        run: |
+          if composer run-script --list | grep -q '^  analyse'; then
+            composer analyse
+          fi
+
+  redis:
+    name: Integracao Redis
+    if: inputs.service == 'redis'
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          tools: composer:2
+          coverage: none
+          extensions: ${{ inputs.extensions }}
+          ini-values: ${{ inputs.ini_values }}
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - run: composer test
+
+  mysql:
+    name: Integracao MySQL
+    if: inputs.service == 'mysql'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: elavora_test
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: elavora_test
+      DB_USERNAME: root
+      DB_PASSWORD: root
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          tools: composer:2
+          coverage: none
+          extensions: ${{ inputs.extensions }}
+          ini-values: ${{ inputs.ini_values }}
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - run: composer test
+
+  postgresql:
+    name: Integracao PostgreSQL
+    if: inputs.service == 'postgresql'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: elavora_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d elavora_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: elavora_test
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          tools: composer:2
+          coverage: none
+          extensions: ${{ inputs.extensions }}
+          ini-values: ${{ inputs.ini_values }}
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - run: composer test
+
+  mongodb:
+    name: Integracao MongoDB
+    if: inputs.service == 'mongodb'
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MONGODB_HOST: 127.0.0.1
+      MONGODB_PORT: 27017
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          tools: composer:2
+          coverage: none
+          extensions: ${{ inputs.extensions }}
+          ini-values: ${{ inputs.ini_values }}
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - run: composer test
+
+  coverage:
+    name: Cobertura
+    if: inputs.coverage_min > 0
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          tools: composer:2
+          coverage: pcov
+          extensions: ${{ inputs.extensions }}
+          ini-values: ${{ inputs.ini_values }}
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - name: Gerar cobertura
+        run: vendor/bin/phpunit --coverage-clover=coverage.xml --coverage-filter=${{ inputs.coverage_path }}
+      - name: Validar limite
+        env:
+          COVERAGE_MIN: ${{ inputs.coverage_min }}
+        run: |
+          php <<'PHP'
+          <?php
+          $report = simplexml_load_file('coverage.xml');
+          $metrics = $report?->project?->metrics;
+          $statements = (int) ($metrics['statements'] ?? 0);
+          $covered = (int) ($metrics['coveredstatements'] ?? 0);
+          $coverage = $statements === 0 ? 0.0 : ($covered / $statements) * 100;
+          $minimum = (float) getenv('COVERAGE_MIN');
+          printf("Cobertura: %.2f%%; minimo: %.2f%%\n", $coverage, $minimum);
+          exit($coverage + 0.00001 < $minimum ? 1 : 0);
+          PHP
+
+  quality-gate:
+    name: Quality Gate
+    if: always()
+    needs:
+      - compatibility
+      - redis
+      - mysql
+      - postgresql
+      - mongodb
+      - coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consolidar resultados
+        env:
+          COMPATIBILITY: ${{ needs.compatibility.result }}
+          REDIS: ${{ needs.redis.result }}
+          MYSQL: ${{ needs.mysql.result }}
+          POSTGRESQL: ${{ needs.postgresql.result }}
+          MONGODB: ${{ needs.mongodb.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+        shell: bash
+        run: |
+          for result in "$COMPATIBILITY" "$REDIS" "$MYSQL" "$POSTGRESQL" "$MONGODB" "$COVERAGE"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::Uma verificacao obrigatoria falhou: $result"; exit 1 ;;
+            esac
+          done

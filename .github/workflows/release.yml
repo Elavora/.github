@@ -1,0 +1,122 @@
+name: Release Composer reutilizavel
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: Nome Composer publicado
+        required: true
+        type: string
+      automation_ref:
+        description: SHA imutavel do repositorio Elavora/.github
+        required: true
+        type: string
+    secrets:
+      packagist_webhook_url:
+        description: Webhook completo e secreto do Packagist
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Criar release
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    env:
+      PACKAGIST_WEBHOOK_URL: ${{ secrets.packagist_webhook_url }}
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Obter automacao central
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Elavora/.github
+          ref: ${{ inputs.automation_ref }}
+          path: .elavora
+
+      - name: Criar tag e release de forma idempotente
+        id: release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const mergeSha = context.payload.pull_request.merge_commit_sha;
+            const labels = context.payload.pull_request.labels.map(({ name }) => name);
+            const { selectReleaseTag } = require('./.elavora/scripts/release-version.cjs');
+            const tags = await github.paginate(github.rest.repos.listTags, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+            const selected = selectReleaseTag(
+              tags.map(({ name, commit }) => ({ name, sha: commit.sha })),
+              mergeSha,
+              labels
+            );
+            const tagExists = tags.some(({ name }) => name === selected.name);
+
+            if (!tagExists) {
+              await github.rest.git.createRef({
+                owner,
+                repo,
+                ref: `refs/tags/${selected.name}`,
+                sha: mergeSha,
+              });
+            }
+
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: selected.name,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              release = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: selected.name,
+                target_commitish: mergeSha,
+                name: selected.name,
+                draft: false,
+                prerelease: selected.rc !== null,
+                generate_release_notes: true,
+              });
+            }
+
+            core.info(`Release ${release.data.html_url}`);
+            core.setOutput('tag', selected.name);
+
+      - name: Notificar Packagist
+        if: env.PACKAGIST_WEBHOOK_URL != ''
+        run: |
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --max-time 30 \
+            --retry 3 \
+            --retry-all-errors \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --data "{\"repository\":{\"url\":\"https://github.com/${GITHUB_REPOSITORY}\"}}" \
+            "$PACKAGIST_WEBHOOK_URL"
+
+      - name: Resumo
+        env:
+          PACKAGE_NAME: ${{ inputs.package_name }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          {
+            echo "## Release concluida"
+            echo
+            echo "- Pacote: \`$PACKAGE_NAME\`"
+            echo "- Tag: \`$TAG\`"
+          } >> "$GITHUB_STEP_SUMMARY"

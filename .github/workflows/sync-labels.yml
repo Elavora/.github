@@ -1,0 +1,37 @@
+name: Sincronizacao de labels reutilizavel
+
+on:
+  workflow_call:
+    inputs:
+      prune:
+        description: Remove labels que nao existem no manifesto central
+        required: false
+        type: boolean
+        default: false
+      automation_ref:
+        description: SHA imutavel do repositorio Elavora/.github
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    name: Sync Labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obter manifesto central
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Elavora/.github
+          ref: ${{ inputs.automation_ref }}
+          path: .elavora
+
+      - name: Sincronizar
+        uses: micnncim/action-label-syncer@3abd5ab72fda571e69fffd97bd4e0033dd5f495c # v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          manifest: .elavora/.github/labels.yml
+          prune: ${{ inputs.prune }}
