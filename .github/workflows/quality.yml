@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: "{}"
+      development_branch:
+        description: Branch de PR autorizada a usar as dependencias de desenvolvimento
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -71,7 +76,7 @@ jobs:
         run: composer validate --strict --no-check-publish
 
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}'
+        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -128,6 +133,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
+      REDIS_INTEGRATION: "1"
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
     steps:
@@ -140,7 +146,7 @@ jobs:
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}'
+        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -159,7 +165,7 @@ jobs:
 
   mysql:
     name: Integracao MySQL
-    if: inputs.service == 'mysql'
+    if: inputs.service == 'mysql' || inputs.service == 'databases'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -180,6 +186,12 @@ jobs:
       DB_DATABASE: elavora_test
       DB_USERNAME: root
       DB_PASSWORD: root
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: elavora_test
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: root
+      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=elavora_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -190,7 +202,7 @@ jobs:
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}'
+        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -209,7 +221,7 @@ jobs:
 
   postgresql:
     name: Integracao PostgreSQL
-    if: inputs.service == 'postgresql'
+    if: inputs.service == 'postgresql' || inputs.service == 'databases'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -231,6 +243,12 @@ jobs:
       DB_DATABASE: elavora_test
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: elavora_test
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=elavora_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -241,7 +259,7 @@ jobs:
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}'
+        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -285,7 +303,7 @@ jobs:
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}'
+        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -316,7 +334,7 @@ jobs:
           extensions: ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}'
+        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash

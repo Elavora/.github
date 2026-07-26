@@ -30,9 +30,9 @@ caller pode informar `development_dependencies` como um objeto JSON de
 pacote para branch. O gate configura apenas repositorios `elavora/*`, valida o
 formato da branch e usa alias `1.0.x-dev` sem alterar o manifesto versionado.
 
-Esse input deve ser condicionado a branch do trabalho. Depois que as tags
-estaveis estiverem disponiveis, o valor precisa ser `{}` para que o Composer
-valide somente releases publicadas.
+O override so e aplicado quando `github.head_ref` corresponde exatamente a
+`development_branch`. Outros PRs e merge groups continuam validando somente
+releases publicadas.
 
 ## Servicos
 
@@ -41,6 +41,7 @@ O workflow de qualidade aceita um servico por pacote:
 - `redis`;
 - `mysql`;
 - `postgresql`;
+- `databases`, para executar MySQL e PostgreSQL em jobs independentes;
 - `mongodb`;
 - `none`.
 
