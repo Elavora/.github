@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: none
+      redis_authentication:
+        description: Exige autenticacao no servico Redis
+        required: false
+        type: boolean
+        default: false
       ini_values:
         description: Valores adicionais de php.ini
         required: false
@@ -46,6 +51,81 @@ jobs:
   compatibility:
     name: PHP ${{ matrix.php }} - ${{ matrix.dependencies }}
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: ${{ inputs.service == 'redis' && 'redis:8-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping || redis-cli -a integration-secret ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      mysql:
+        image: ${{ (inputs.service == 'mysql' || inputs.service == 'databases') && 'mysql:8.4' || '' }}
+        env:
+          MYSQL_DATABASE: elavora_test
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      postgres:
+        image: ${{ (inputs.service == 'postgresql' || inputs.service == 'databases') && 'postgres:17-alpine' || '' }}
+        env:
+          POSTGRES_DB: elavora_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d elavora_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mongodb:
+        image: ${{ inputs.service == 'mongodb' && 'mongo:8' || '' }}
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      REDIS_INTEGRATION: ${{ inputs.service == 'redis' && '1' || '0' }}
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${{ inputs.redis_authentication && 'integration-secret' || '' }}
+      DB_HOST: 127.0.0.1
+      DB_DATABASE: elavora_test
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: elavora_test
+      MYSQL_DB: elavora_test
+      MYSQL_USER: root
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: root
+      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=elavora_test
+      PDO_MYSQL_USER: root
+      PDO_MYSQL_PASSWORD: root
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: elavora_test
+      POSTGRES_DATABASE: elavora_test
+      POSTGRES_USER: postgres
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=elavora_test
+      PDO_POSTGRES_USER: postgres
+      PDO_POSTGRES_PASSWORD: postgres
+      MONGODB_HOST: 127.0.0.1
+      MONGODB_PORT: 27017
     strategy:
       fail-fast: false
       matrix:
@@ -90,6 +170,12 @@ jobs:
             composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
+
+      - name: Configurar autenticacao Redis
+        if: inputs.service == 'redis' && inputs.redis_authentication
+        env:
+          REDIS_CONTAINER: ${{ job.services.redis.id }}
+        run: docker exec "$REDIS_CONTAINER" redis-cli CONFIG SET requirepass "$REDIS_PASSWORD"
 
       - name: Resolver dependencias minimas
         if: matrix.dependencies == 'lowest'
@@ -136,7 +222,7 @@ jobs:
       REDIS_INTEGRATION: "1"
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
-      REDIS_PASSWORD: integration-secret
+      REDIS_PASSWORD: ${{ inputs.redis_authentication && 'integration-secret' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -162,6 +248,7 @@ jobs:
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - name: Configurar autenticacao Redis
+        if: inputs.redis_authentication
         env:
           REDIS_CONTAINER: ${{ job.services.redis.id }}
         run: docker exec "$REDIS_CONTAINER" redis-cli CONFIG SET requirepass "$REDIS_PASSWORD"
@@ -337,6 +424,81 @@ jobs:
     name: Cobertura
     if: inputs.coverage_min > 0
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: ${{ inputs.service == 'redis' && 'redis:8-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping || redis-cli -a integration-secret ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      mysql:
+        image: ${{ (inputs.service == 'mysql' || inputs.service == 'databases') && 'mysql:8.4' || '' }}
+        env:
+          MYSQL_DATABASE: elavora_test
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      postgres:
+        image: ${{ (inputs.service == 'postgresql' || inputs.service == 'databases') && 'postgres:17-alpine' || '' }}
+        env:
+          POSTGRES_DB: elavora_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d elavora_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mongodb:
+        image: ${{ inputs.service == 'mongodb' && 'mongo:8' || '' }}
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      REDIS_INTEGRATION: ${{ inputs.service == 'redis' && '1' || '0' }}
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${{ inputs.redis_authentication && 'integration-secret' || '' }}
+      DB_HOST: 127.0.0.1
+      DB_DATABASE: elavora_test
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: elavora_test
+      MYSQL_DB: elavora_test
+      MYSQL_USER: root
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: root
+      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=elavora_test
+      PDO_MYSQL_USER: root
+      PDO_MYSQL_PASSWORD: root
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: elavora_test
+      POSTGRES_DATABASE: elavora_test
+      POSTGRES_USER: postgres
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=elavora_test
+      PDO_POSTGRES_USER: postgres
+      PDO_POSTGRES_PASSWORD: postgres
+      MONGODB_HOST: 127.0.0.1
+      MONGODB_PORT: 27017
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -361,6 +523,11 @@ jobs:
             composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
+      - name: Configurar autenticacao Redis
+        if: inputs.service == 'redis' && inputs.redis_authentication
+        env:
+          REDIS_CONTAINER: ${{ job.services.redis.id }}
+        run: docker exec "$REDIS_CONTAINER" redis-cli CONFIG SET requirepass "$REDIS_PASSWORD"
       - run: composer update --no-interaction --no-progress --prefer-dist
       - name: Gerar cobertura
         run: vendor/bin/phpunit --coverage-clover=coverage.xml --coverage-filter=${{ inputs.coverage_path }}
