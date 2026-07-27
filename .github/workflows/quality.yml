@@ -128,7 +128,7 @@ jobs:
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "redis-cli ping || redis-cli -a integration-secret ping"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
@@ -136,6 +136,7 @@ jobs:
       REDIS_INTEGRATION: "1"
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
+      REDIS_PASSWORD: integration-secret
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -160,6 +161,10 @@ jobs:
             composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
+      - name: Configurar autenticacao Redis
+        env:
+          REDIS_CONTAINER: ${{ job.services.redis.id }}
+        run: docker exec "$REDIS_CONTAINER" redis-cli CONFIG SET requirepass "$REDIS_PASSWORD"
       - run: composer update --no-interaction --no-progress --prefer-dist
       - run: composer test
 
@@ -189,9 +194,13 @@ jobs:
       MYSQL_HOST: 127.0.0.1
       MYSQL_PORT: 3306
       MYSQL_DATABASE: elavora_test
+      MYSQL_DB: elavora_test
+      MYSQL_USER: root
       MYSQL_USERNAME: root
       MYSQL_PASSWORD: root
       PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=elavora_test
+      PDO_MYSQL_USER: root
+      PDO_MYSQL_PASSWORD: root
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -245,10 +254,14 @@ jobs:
       DB_PASSWORD: postgres
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: 5432
+      POSTGRES_DB: elavora_test
       POSTGRES_DATABASE: elavora_test
+      POSTGRES_USER: postgres
       POSTGRES_USERNAME: postgres
       POSTGRES_PASSWORD: postgres
       PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=elavora_test
+      PDO_POSTGRES_USER: postgres
+      PDO_POSTGRES_PASSWORD: postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
