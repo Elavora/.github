@@ -87,7 +87,7 @@ jobs:
               exit 1
             fi
             repository="${package#elavora/}"
-            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
 
@@ -157,7 +157,7 @@ jobs:
               exit 1
             fi
             repository="${package#elavora/}"
-            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
@@ -213,7 +213,7 @@ jobs:
               exit 1
             fi
             repository="${package#elavora/}"
-            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
@@ -270,7 +270,7 @@ jobs:
               exit 1
             fi
             repository="${package#elavora/}"
-            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
@@ -314,7 +314,7 @@ jobs:
               exit 1
             fi
             repository="${package#elavora/}"
-            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
@@ -345,7 +345,7 @@ jobs:
               exit 1
             fi
             repository="${package#elavora/}"
-            composer config "repositories.${repository}" vcs "https://github.com/Elavora/${repository}.git"
+            composer config "repositories.${repository}" git "https://github.com/Elavora/${repository}.git"
             composer require --no-update "${package}:dev-${branch} as 1.0.x-dev"
           done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$DEVELOPMENT_DEPENDENCIES")
       - run: composer update --no-interaction --no-progress --prefer-dist
