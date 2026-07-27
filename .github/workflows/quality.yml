@@ -29,7 +29,7 @@ on:
         type: number
         default: 0
       coverage_path:
-        description: Diretorio de codigo considerado na cobertura
+        description: Diretorio de codigo considerado; vazio usa a configuracao do PHPUnit
         required: false
         type: string
         default: src
@@ -64,8 +64,10 @@ jobs:
       mysql:
         image: ${{ (inputs.service == 'mysql' || inputs.service == 'databases') && 'mysql:8.4' || '' }}
         env:
-          MYSQL_DATABASE: elavora_test
+          MYSQL_DATABASE: api
           MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: api
+          MYSQL_PASSWORD: api
         ports:
           - 3306:3306
         options: >-
@@ -76,13 +78,13 @@ jobs:
       postgres:
         image: ${{ (inputs.service == 'postgresql' || inputs.service == 'databases') && 'postgres:17-alpine' || '' }}
         env:
-          POSTGRES_DB: elavora_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: api
+          POSTGRES_USER: api
+          POSTGRES_PASSWORD: api
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d elavora_test"
+          --health-cmd "pg_isready -U api -d api"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -101,31 +103,32 @@ jobs:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${{ inputs.redis_authentication && 'integration-secret' || '' }}
       DB_HOST: 127.0.0.1
-      DB_DATABASE: elavora_test
-      DB_USERNAME: root
-      DB_PASSWORD: root
+      DB_DATABASE: api
+      DB_USERNAME: api
+      DB_PASSWORD: api
       MYSQL_HOST: 127.0.0.1
       MYSQL_PORT: 3306
-      MYSQL_DATABASE: elavora_test
-      MYSQL_DB: elavora_test
-      MYSQL_USER: root
-      MYSQL_USERNAME: root
-      MYSQL_PASSWORD: root
-      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=elavora_test
-      PDO_MYSQL_USER: root
-      PDO_MYSQL_PASSWORD: root
+      MYSQL_DATABASE: api
+      MYSQL_DB: api
+      MYSQL_USER: api
+      MYSQL_USERNAME: api
+      MYSQL_PASSWORD: api
+      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=api
+      PDO_MYSQL_USER: api
+      PDO_MYSQL_PASSWORD: api
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: 5432
-      POSTGRES_DB: elavora_test
-      POSTGRES_DATABASE: elavora_test
-      POSTGRES_USER: postgres
-      POSTGRES_USERNAME: postgres
-      POSTGRES_PASSWORD: postgres
-      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=elavora_test
-      PDO_POSTGRES_USER: postgres
-      PDO_POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api
+      POSTGRES_DATABASE: api
+      POSTGRES_USER: api
+      POSTGRES_USERNAME: api
+      POSTGRES_PASSWORD: api
+      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=api
+      PDO_POSTGRES_USER: api
+      PDO_POSTGRES_PASSWORD: api
       MONGODB_HOST: 127.0.0.1
       MONGODB_PORT: 27017
+      MONGODB_INTEGRATION: ${{ inputs.service == 'mongodb' && '1' || '0' }}
     strategy:
       fail-fast: false
       matrix:
@@ -149,14 +152,14 @@ jobs:
           php-version: ${{ matrix.php }}
           tools: composer:2
           coverage: none
-          extensions: ${{ inputs.extensions }}
+          extensions: ctype, filter, json, simplexml, ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
 
       - name: Validar manifesto Composer
         run: composer validate --strict --no-check-publish
 
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
+        if: inputs.development_dependencies != '{}' && (github.head_ref == inputs.development_branch || github.ref_name == inputs.development_branch)
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -230,10 +233,10 @@ jobs:
           php-version: "8.5"
           tools: composer:2
           coverage: none
-          extensions: ${{ inputs.extensions }}
+          extensions: ctype, filter, json, simplexml, ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
+        if: inputs.development_dependencies != '{}' && (github.head_ref == inputs.development_branch || github.ref_name == inputs.development_branch)
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -263,8 +266,10 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_DATABASE: elavora_test
+          MYSQL_DATABASE: api
           MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: api
+          MYSQL_PASSWORD: api
         ports:
           - 3306:3306
         options: >-
@@ -275,19 +280,19 @@ jobs:
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
-      DB_DATABASE: elavora_test
-      DB_USERNAME: root
-      DB_PASSWORD: root
+      DB_DATABASE: api
+      DB_USERNAME: api
+      DB_PASSWORD: api
       MYSQL_HOST: 127.0.0.1
       MYSQL_PORT: 3306
-      MYSQL_DATABASE: elavora_test
-      MYSQL_DB: elavora_test
-      MYSQL_USER: root
-      MYSQL_USERNAME: root
-      MYSQL_PASSWORD: root
-      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=elavora_test
-      PDO_MYSQL_USER: root
-      PDO_MYSQL_PASSWORD: root
+      MYSQL_DATABASE: api
+      MYSQL_DB: api
+      MYSQL_USER: api
+      MYSQL_USERNAME: api
+      MYSQL_PASSWORD: api
+      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=api
+      PDO_MYSQL_USER: api
+      PDO_MYSQL_PASSWORD: api
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -295,10 +300,10 @@ jobs:
           php-version: "8.5"
           tools: composer:2
           coverage: none
-          extensions: ${{ inputs.extensions }}
+          extensions: ctype, filter, json, simplexml, ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
+        if: inputs.development_dependencies != '{}' && (github.head_ref == inputs.development_branch || github.ref_name == inputs.development_branch)
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -323,32 +328,32 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: elavora_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: api
+          POSTGRES_USER: api
+          POSTGRES_PASSWORD: api
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d elavora_test"
+          --health-cmd "pg_isready -U api -d api"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
-      DB_DATABASE: elavora_test
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
+      DB_DATABASE: api
+      DB_USERNAME: api
+      DB_PASSWORD: api
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: 5432
-      POSTGRES_DB: elavora_test
-      POSTGRES_DATABASE: elavora_test
-      POSTGRES_USER: postgres
-      POSTGRES_USERNAME: postgres
-      POSTGRES_PASSWORD: postgres
-      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=elavora_test
-      PDO_POSTGRES_USER: postgres
-      PDO_POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api
+      POSTGRES_DATABASE: api
+      POSTGRES_USER: api
+      POSTGRES_USERNAME: api
+      POSTGRES_PASSWORD: api
+      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=api
+      PDO_POSTGRES_USER: api
+      PDO_POSTGRES_PASSWORD: api
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -356,10 +361,10 @@ jobs:
           php-version: "8.5"
           tools: composer:2
           coverage: none
-          extensions: ${{ inputs.extensions }}
+          extensions: ctype, filter, json, simplexml, ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
+        if: inputs.development_dependencies != '{}' && (github.head_ref == inputs.development_branch || github.ref_name == inputs.development_branch)
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -393,6 +398,7 @@ jobs:
     env:
       MONGODB_HOST: 127.0.0.1
       MONGODB_PORT: 27017
+      MONGODB_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -400,10 +406,10 @@ jobs:
           php-version: "8.5"
           tools: composer:2
           coverage: none
-          extensions: ${{ inputs.extensions }}
+          extensions: ctype, filter, json, simplexml, ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
+        if: inputs.development_dependencies != '{}' && (github.head_ref == inputs.development_branch || github.ref_name == inputs.development_branch)
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -437,8 +443,10 @@ jobs:
       mysql:
         image: ${{ (inputs.service == 'mysql' || inputs.service == 'databases') && 'mysql:8.4' || '' }}
         env:
-          MYSQL_DATABASE: elavora_test
+          MYSQL_DATABASE: api
           MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: api
+          MYSQL_PASSWORD: api
         ports:
           - 3306:3306
         options: >-
@@ -449,13 +457,13 @@ jobs:
       postgres:
         image: ${{ (inputs.service == 'postgresql' || inputs.service == 'databases') && 'postgres:17-alpine' || '' }}
         env:
-          POSTGRES_DB: elavora_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: api
+          POSTGRES_USER: api
+          POSTGRES_PASSWORD: api
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d elavora_test"
+          --health-cmd "pg_isready -U api -d api"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -474,31 +482,32 @@ jobs:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${{ inputs.redis_authentication && 'integration-secret' || '' }}
       DB_HOST: 127.0.0.1
-      DB_DATABASE: elavora_test
-      DB_USERNAME: root
-      DB_PASSWORD: root
+      DB_DATABASE: api
+      DB_USERNAME: api
+      DB_PASSWORD: api
       MYSQL_HOST: 127.0.0.1
       MYSQL_PORT: 3306
-      MYSQL_DATABASE: elavora_test
-      MYSQL_DB: elavora_test
-      MYSQL_USER: root
-      MYSQL_USERNAME: root
-      MYSQL_PASSWORD: root
-      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=elavora_test
-      PDO_MYSQL_USER: root
-      PDO_MYSQL_PASSWORD: root
+      MYSQL_DATABASE: api
+      MYSQL_DB: api
+      MYSQL_USER: api
+      MYSQL_USERNAME: api
+      MYSQL_PASSWORD: api
+      PDO_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=api
+      PDO_MYSQL_USER: api
+      PDO_MYSQL_PASSWORD: api
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: 5432
-      POSTGRES_DB: elavora_test
-      POSTGRES_DATABASE: elavora_test
-      POSTGRES_USER: postgres
-      POSTGRES_USERNAME: postgres
-      POSTGRES_PASSWORD: postgres
-      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=elavora_test
-      PDO_POSTGRES_USER: postgres
-      PDO_POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api
+      POSTGRES_DATABASE: api
+      POSTGRES_USER: api
+      POSTGRES_USERNAME: api
+      POSTGRES_PASSWORD: api
+      PDO_POSTGRES_DSN: pgsql:host=127.0.0.1;port=5432;dbname=api
+      PDO_POSTGRES_USER: api
+      PDO_POSTGRES_PASSWORD: api
       MONGODB_HOST: 127.0.0.1
       MONGODB_PORT: 27017
+      MONGODB_INTEGRATION: ${{ inputs.service == 'mongodb' && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -506,10 +515,10 @@ jobs:
           php-version: "8.5"
           tools: composer:2
           coverage: pcov
-          extensions: ${{ inputs.extensions }}
+          extensions: ctype, filter, json, simplexml, ${{ inputs.extensions }}
           ini-values: ${{ inputs.ini_values }}
       - name: Configurar dependencias de PRs coordenados
-        if: inputs.development_dependencies != '{}' && github.head_ref == inputs.development_branch
+        if: inputs.development_dependencies != '{}' && (github.head_ref == inputs.development_branch || github.ref_name == inputs.development_branch)
         env:
           DEVELOPMENT_DEPENDENCIES: ${{ inputs.development_dependencies }}
         shell: bash
@@ -530,7 +539,22 @@ jobs:
         run: docker exec "$REDIS_CONTAINER" redis-cli CONFIG SET requirepass "$REDIS_PASSWORD"
       - run: composer update --no-interaction --no-progress --prefer-dist
       - name: Gerar cobertura
-        run: vendor/bin/phpunit --coverage-clover=coverage.xml --coverage-filter=${{ inputs.coverage_path }}
+        env:
+          COVERAGE_PATH: ${{ inputs.coverage_path }}
+        shell: bash
+        run: |
+          coverage_args=(--coverage-clover=coverage.xml)
+          if [[ -n "$COVERAGE_PATH" ]]; then
+            if [[ ! "$COVERAGE_PATH" =~ ^[A-Za-z0-9._/-]+$ ]] \
+              || [[ "$COVERAGE_PATH" == /* ]] \
+              || [[ "$COVERAGE_PATH" == *".."* ]] \
+              || [[ ! -e "$COVERAGE_PATH" ]]; then
+              echo "::error::Caminho de cobertura invalido: $COVERAGE_PATH"
+              exit 1
+            fi
+            coverage_args+=(--coverage-filter="$COVERAGE_PATH")
+          fi
+          vendor/bin/phpunit "${coverage_args[@]}"
       - name: Validar limite
         env:
           COVERAGE_MIN: ${{ inputs.coverage_min }}
