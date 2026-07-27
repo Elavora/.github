@@ -1,0 +1,99 @@
+- name: bug
+  color: d73a4a
+  description: Comportamento incorreto ou regressao
+
+- name: ci
+  color: 1d76db
+  description: Integracao, entrega ou automacao continua
+
+- name: dependencies
+  color: 0366d6
+  description: Atualizacao de dependencias
+
+- name: deprecated
+  color: ff0000
+  description: Funcionalidade obsoleta que sera removida
+
+- name: documentation
+  color: 0075ca
+  description: Documentacao nova ou corrigida
+
+- name: duplicate
+  color: cfd3d7
+  description: Item ja representado por outra issue ou PR
+
+- name: enhancement
+  color: a2eeef
+  description: Nova capacidade ou melhoria de comportamento
+
+- name: good first issue
+  color: 7057ff
+  description: Trabalho adequado para primeira contribuicao
+
+- name: github-actions
+  color: 2088ff
+  description: Dependencias e mudancas do GitHub Actions
+
+- name: github_actions
+  color: 000000
+  description: Label legada usada por atualizacoes do GitHub Actions
+
+- name: help wanted
+  color: 008672
+  description: Trabalho que precisa de contribuicao adicional
+
+- name: IA
+  color: ff5733
+  description: Mudanca produzida com assistencia de IA
+
+- name: invalid
+  color: e4e669
+  description: Item que nao representa trabalho valido
+
+- name: major
+  color: b60205
+  description: Alteracao que incrementa a versao major
+
+- name: minor
+  color: fbca04
+  description: Alteracao que incrementa a versao minor
+
+- name: patch
+  color: 0e8a16
+  description: Alteracao que incrementa a versao patch
+
+- name: php
+  color: 45229e
+  description: Dependencias e mudancas do ecossistema PHP
+
+- name: prerelease
+  color: c5def5
+  description: Publicacao de versao de pre-release
+
+- name: question
+  color: d876e3
+  description: Duvida que precisa de esclarecimento
+
+- name: refactor
+  color: 2c8cdb
+  description: Refatoracao sem mudanca funcional intencional
+
+- name: release
+  color: 0e8a16
+  description: Publicacao de uma versao estavel
+
+- name: security
+  color: ee0701
+  description: Correcao ou melhoria de seguranca
+
+- name: tests
+  color: 00bcd4
+  description: Criacao ou melhoria de testes
+
+- name: upgrade
+  color: fbca04
+  description: Mudanca incompativel planejada
+
+- name: wontfix
+  color: 000000
+  description: Item que nao sera implementado

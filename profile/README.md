@@ -1,12 +1,42 @@
-## Hi there 👋
+# Elavora
 
-<!--
+A Elavora desenvolve componentes PHP modulares para criar APIs HTTP com
+dependencias explicitas e instalacao por Composer.
 
-**Here are some ideas to get you started:**
+## Por onde comecar
 
-🙋‍♀️ A short introduction - what is your organization all about?
-🌈 Contribution guidelines - how can the community get involved?
-👩‍💻 Useful resources - where can the community find your docs? Is there anything else the community should know?
-🍿 Fun facts - what does your team eat for breakfast?
-🧙 Remember, you can do mighty things with the power of [Markdown](https://docs.github.com/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)
--->
+- [api-framework](https://github.com/Elavora/api-framework): nucleo HTTP,
+  container, roteamento, middleware e contratos compartilhados.
+- [api-skeleton](https://github.com/Elavora/api-skeleton): estrutura inicial
+  para uma nova API.
+- [api-datatypes](https://github.com/Elavora/api-datatypes): agregador dos
+  DataTypes reutilizaveis. Cada DataType tambem pode ser instalado
+  individualmente.
+
+Os adaptadores de cache, banco de dados, Redis, filas, logs e storage ficam em
+repositorios `api-*` separados. Cada projeto instala apenas os pacotes de que
+precisa.
+
+## Instalacao
+
+Os pacotes exigem PHP e Composer. Consulte o `composer.json` do pacote escolhido
+para conhecer as versoes e extensoes suportadas.
+
+```bash
+composer require elavora/api-framework
+```
+
+Para iniciar um projeto pela estrutura base:
+
+```bash
+composer create-project elavora/api-skeleton api
+```
+
+## Projeto publico
+
+Issues e pull requests devem ser abertos no repositorio afetado. As orientacoes
+de contribuicao e a politica de seguranca ficam nos arquivos `CONTRIBUTING.md`
+e `SECURITY.md` de cada pacote.
+
+Os pacotes ainda estao em evolucao. Consulte releases e changelogs antes de
+adota-los.
