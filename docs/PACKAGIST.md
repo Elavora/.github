@@ -7,10 +7,13 @@ composer.json e nao atualiza o composer.lock de consumidores.
 
 ## Gatilhos
 
-- `workflow_run` apos sucesso de `Release` ou `Tag on merge`: atende aos dois fluxos
-  atuais e funciona quando a tag/release foi criada com GITHUB_TOKEN. Nao filtrar
-  head_branch por main: o workflow de merge de PR pode conservar o nome da branch
-  do PR. O proprio fluxo de release ja limita a criacao a merges em main.
+- `repository_dispatch: tag-created`: recebe o sinal emitido logo apos criar a tag
+  nos fluxos legados, mesmo com GITHUB_TOKEN.
+- `workflow_run` ao terminar `Release` ou `Tag on merge`: confere repositorio,
+  caminho do workflow e sucesso da etapa de tag na tentativa correspondente via
+  API do GitHub (permissao actions: read). Aceita forks e falhas posteriores a essa
+  etapa; ignora jobs pulados em PRs fechados sem merge. Os nomes das etapas sao
+  contratos com os workflows atuais; atualizar o filtro se esses nomes mudarem.
 - `release: published`: releases publicadas manualmente.
 - `push` de tags `v*`: tags criadas diretamente por mantenedores.
 - `workflow_dispatch`: reexecucao manual para recuperar notificacoes perdidas ou
@@ -43,7 +46,8 @@ A implementacao converte a URL secreta em autenticacao Bearer para o endpoint
 oficial, evita redirects e nao imprime URL, token nem resposta de erro. Falha
 quando o segredo falta ou quando o Packagist nao confirma `status: success`.
 Timeout: 30 segundos por requisicao; ate quatro tentativas para falhas de rede,
-HTTP 429 e 5xx, com espera exponencial. Erros 4xx de autenticacao falham imediatamente.
+HTTP 429 e 5xx, inclusive falhas ao consumir a resposta, com espera exponencial.
+JSON malformado e erros 4xx de autenticacao falham imediatamente.
 O resumo confirma a solicitacao aceita; a indexacao no Packagist e assincrona.
 
 ## Recuperacao

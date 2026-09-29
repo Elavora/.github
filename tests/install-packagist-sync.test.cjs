@@ -25,8 +25,10 @@ test('installs both release triggers and immutable central references, removing 
   const text = fs.readFileSync(path.join(workflows, 'packagist-sync.yml'), 'utf8');
   assert.match(text, /workflows: \[Release, Tag on merge\]/);
   assert.match(text, /types: \[completed\]/);
-  assert.match(text, /conclusion == 'success'/);
-  assert.match(text, /head_repository.full_name == github.repository/);
+  assert.match(text, /repository_dispatch:/);
+  assert.match(text, /types: \[tag-created\]/);
+  assert.match(text, /actions: read/);
+  assert.ok(!text.includes('head_repository'));
   assert.match(text, /workflow_dispatch:/);
   assert.match(text, /types: \[published\]/);
   assert.match(text, /tags: \['v\*'\]/);

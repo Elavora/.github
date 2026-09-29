@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: packagist-${{ github.repository }}
@@ -34,7 +35,16 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts
 
+      - name: Confirmar criacao de tag ou solicitacao explicita
+        id: trigger
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { shouldNotify } = require('./.elavora/scripts/packagist-trigger.cjs');
+            core.setOutput('notify', await shouldNotify({ github, context }));
+
       - name: Solicitar atualizacao das versoes existentes
+        if: steps.trigger.outputs.notify == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}

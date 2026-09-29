@@ -47,8 +47,13 @@ async function notifyPackagist({ repository, webhookUrl, fetchImpl = fetch, slee
       throw new Error(`Packagist rejeitou a atualizacao (HTTP ${response.status}). Verifique o secret e o acesso ao pacote.`);
     }
     let result;
-    try { result = await response.json(); } catch {
-      throw new Error('Packagist retornou uma resposta JSON invalida.');
+    try { result = await response.json(); } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error('Packagist retornou uma resposta JSON invalida.');
+      }
+      if (attempt === 4) throw new Error('Falha de rede/timeout ao ler resposta do Packagist apos 4 tentativas.');
+      await sleep(1000 * 2 ** (attempt - 1));
+      continue;
     }
     if (result?.status !== 'success') {
       throw new Error('Packagist nao confirmou a solicitacao de atualizacao.');

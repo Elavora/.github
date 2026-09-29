@@ -6,6 +6,7 @@ const secret = 'https://packagist.org/api/update-package?username=maintainer&api
 const options = { repository: 'Elavora/api-framework', webhookUrl: secret, sleep: async () => {} };
 const success = () => new Response(JSON.stringify({ status: 'success', jobs: ['job'] }), { status: 200 });
 
+// Official API contract: https://packagist.org/apidoc#update-a-package (repository is a string).
 test('uses canonical repository and header authentication without leaking credentials into URL', async () => {
   const result = await notifyPackagist({ ...options, fetchImpl: async (url, request) => {
     assert.equal(url, 'https://packagist.org/api/update-package');
@@ -92,4 +93,28 @@ test('repeated notifications target the same package without creating versions',
   await notifyPackagist({ ...options, fetchImpl });
   await notifyPackagist({ ...options, fetchImpl });
   assert.equal(calls, 2);
+});
+
+for (const error of [new TypeError('connection reset'), new DOMException('timeout', 'TimeoutError')]) {
+  test(`retries failures consuming response body: ${error.name}`, async () => {
+    let calls = 0;
+    const result = await notifyPackagist({ ...options, fetchImpl: async () => {
+      return ++calls === 1 ? { ok: true, json: async () => { throw error; } } : success();
+    }});
+    assert.equal(result.attempts, 2);
+  });
+}
+test('body failures exhaust the retry budget without leaking response data', async () => {
+  let calls = 0;
+  await assert.rejects(notifyPackagist({ ...options, fetchImpl: async () => {
+    calls++; return { ok: true, json: async () => { throw new TypeError(secret); } };
+  }}), error => /4 tentativas/.test(error.message) && !error.message.includes('test-token'));
+  assert.equal(calls, 4);
+});
+test('malformed JSON is not treated as a retryable network failure', async () => {
+  let calls = 0;
+  await assert.rejects(notifyPackagist({ ...options, fetchImpl: async () => {
+    calls++; return new Response('not json');
+  }}), /JSON invalida/);
+  assert.equal(calls, 1);
 });
