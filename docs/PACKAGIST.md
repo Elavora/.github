@@ -7,8 +7,6 @@ composer.json e nao atualiza o composer.lock de consumidores.
 
 ## Gatilhos
 
-- `repository_dispatch: tag-created`: recebe o sinal emitido logo apos criar a tag
-  nos fluxos legados, mesmo com GITHUB_TOKEN.
 - `workflow_run` ao terminar `Release` ou `Tag on merge`: confere repositorio,
   caminho do workflow e sucesso da etapa de tag na tentativa correspondente via
   API do GitHub (permissao actions: read). Aceita forks e falhas posteriores a essa

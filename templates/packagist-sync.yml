@@ -4,8 +4,6 @@ on:
   workflow_run:
     workflows: [Release, Tag on merge]
     types: [completed]
-  repository_dispatch:
-    types: [tag-created]
   release:
     types: [published]
   push:

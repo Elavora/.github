@@ -7,17 +7,6 @@ async function shouldNotify({ github, context }) {
   if (context.eventName === 'workflow_dispatch') return true;
   if (context.eventName === 'push') return !payload.deleted && /^refs\/tags\/v.+/.test(payload.ref || '');
   if (context.eventName === 'release') return payload.action === 'published' && !payload.release?.draft;
-  if (context.eventName === 'repository_dispatch') {
-    const tag = payload.client_payload?.tag;
-    if (payload.action !== 'tag-created' || typeof tag !== 'string' || !/^v[^\s]+$/.test(tag)) return false;
-    try {
-      await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
-      return true;
-    } catch (error) {
-      if (error.status === 404) return false;
-      throw error;
-    }
-  }
   if (context.eventName !== 'workflow_run') return false;
   const run = payload.workflow_run;
   const steps = {

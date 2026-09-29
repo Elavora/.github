@@ -38,19 +38,7 @@ test('job API failures remain visible', async () => {
   const input = fixture(); input.github.paginate = async () => { throw new Error('API failed'); };
   await assert.rejects(shouldNotify(input), /API failed/);
 });
-test('tag-created dispatch checks that the tag exists', async () => {
-  const github = { rest: { git: { getRef: async args => assert.deepEqual(args, { ...repo, ref: 'tags/v1.2.3' }) } } };
-  assert.equal(await shouldNotify({ github, context: { repo, eventName: 'repository_dispatch',
-    payload: { action: 'tag-created', client_payload: { tag: 'v1.2.3' } } } }), true);
-});
-test('dispatch for nonexistent tag is ignored', async () => {
-  const github = { rest: { git: { getRef: async () => { throw { status: 404 }; } } } };
-  assert.equal(await shouldNotify({ github, context: { repo, eventName: 'repository_dispatch',
-    payload: { action: 'tag-created', client_payload: { tag: 'v1.2.3' } } } }), false);
-});
 for (const [eventName, payload, expected] of [
-  ['repository_dispatch', { action: 'tag-created' }, false],
-  ['repository_dispatch', { action: 'other', client_payload: { tag: 'v1' } }, false],
   ['push', { ref: 'refs/tags/v1.2.3', deleted: false }, true],
   ['push', { ref: 'refs/tags/v1.2.3', deleted: true }, false],
   ['push', { ref: 'refs/heads/main' }, false],
