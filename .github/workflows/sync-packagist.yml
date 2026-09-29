@@ -1,0 +1,65 @@
+name: Atualizar Packagist reutilizavel
+
+on:
+  workflow_call:
+    inputs:
+      automation_ref:
+        description: SHA imutavel desta automacao central
+        required: true
+        type: string
+    secrets:
+      PACKAGIST_WEBHOOK_URL:
+        description: Endpoint de update-package com username e apiToken do mantenedor
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: packagist-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Atualizar Packagist
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Obter somente a automacao central
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Elavora/.github
+          ref: ${{ inputs.automation_ref }}
+          path: .elavora
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Confirmar criacao de tag ou solicitacao explicita
+        id: trigger
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { shouldNotify } = require('./.elavora/scripts/packagist-trigger.cjs');
+            core.setOutput('notify', await shouldNotify({ github, context }));
+
+      - name: Solicitar atualizacao das versoes existentes
+        if: steps.trigger.outputs.notify == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
+        with:
+          script: |
+            const { notifyPackagist } = require('./.elavora/scripts/sync-packagist.cjs');
+            const webhookUrl = process.env.PACKAGIST_WEBHOOK_URL;
+            if (webhookUrl) core.setSecret(webhookUrl);
+            try {
+              const result = await notifyPackagist({ repository: context.repo.owner + '/' + context.repo.repo, webhookUrl });
+              await core.summary
+                .addHeading('Atualizacao solicitada ao Packagist')
+                .addRaw(`Repositorio: ${context.repo.owner}/${context.repo.repo}. Tentativas: ${result.attempts}.\n`)
+                .addRaw('O Packagist aceitou a solicitacao; a indexacao pode levar alguns instantes. Nenhuma tag ou arquivo foi alterado.\n')
+                .write();
+            } catch (error) {
+              core.setFailed(error.message);
+            }

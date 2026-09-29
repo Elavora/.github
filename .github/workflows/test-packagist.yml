@@ -1,0 +1,29 @@
+name: Packagist Automation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Testes e workflows Packagist
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Testes sem chamadas reais ao Packagist
+        run: |
+          docker run --rm -v "$PWD:/work:ro" -w /work \
+            node@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 \
+            node --test tests/*.test.cjs
+      - name: Validar workflow reutilizavel e chamador
+        run: |
+          sed "s/AUTOMATION_REF/$GITHUB_SHA/g" templates/packagist-sync.yml > "$RUNNER_TEMP/packagist-sync.yml"
+          docker run --rm -v "$PWD:/work:ro" -v "$RUNNER_TEMP:/fixtures:ro" -w /work \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -color .github/workflows/sync-packagist.yml .github/workflows/test-packagist.yml /fixtures/packagist-sync.yml
