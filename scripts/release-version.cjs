@@ -1,8 +1,8 @@
 'use strict';
 
 const [rawTags = '', rawLabels = '[]'] = process.argv.slice(2);
-const TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$/;
-const tags = rawTags.split(/\s+/).filter(Boolean).map((name) => {
+const TAG_PATTERN = /^v(\\d+)\\.(\\d+)\\.(\\d+)(?:-rc\\.(\\d+))?$/;
+const tags = rawTags.split(/\\s+/).filter(Boolean).map((name) => {
   const match = TAG_PATTERN.exec(name);
   return match && {
     name, major: Number(match[1]), minor: Number(match[2]),
@@ -23,12 +23,22 @@ let target;
 if (publishStable && pending.length) {
   const last = pending.at(-1);
   target = { major: last.major, minor: last.minor, patch: last.patch, rc: null };
-} else if (labels.includes('upgrade') || labels.includes('major')) {
-  target = { major: stable.major + 1, minor: 0, patch: 0, rc: 1 };
-} else if (labels.includes('enhancement') || labels.includes('dependencies') || labels.includes('minor')) {
-  target = { major: stable.major, minor: stable.minor + 1, patch: 0, rc: 1 };
 } else {
-  target = { major: stable.major, minor: stable.minor, patch: stable.patch + 1, rc: 1 };
+  target = { major: stable.major, minor: stable.minor, patch: stable.patch, rc: null };
+  if (labels.includes('upgrade') || labels.includes('major') || labels.includes('breaking')) {
+    target = { major: stable.major + 1, minor: 0, patch: 0, rc: null };
+  } else if (
+    labels.includes('enhancement')
+    || labels.includes('improvement')
+    || labels.includes('feature')
+    || labels.includes('dependencies')
+    || labels.includes('minor')
+  ) {
+    target = { major: stable.major, minor: stable.minor + 1, patch: 0, rc: null };
+  } else {
+    target.patch++;
+  }
+  target.rc = publishStable ? null : 1;
 }
 if (!publishStable) {
   const previous = tags.filter((tag) => tag.major === target.major && tag.minor === target.minor
