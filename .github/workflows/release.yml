@@ -4,7 +4,11 @@ on:
   workflow_call:
     inputs:
       package_name:
-        description: Composer package name used in the release notes.
+        description: Composer package name used in release notes.
+        required: true
+        type: string
+      automation_ref:
+        description: Immutable commit SHA of Elavora/.github containing this workflow and its helper.
         required: true
         type: string
     secrets:
@@ -35,17 +39,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Elavora/.github
-          ref: automation/semver-pr-releases
+          ref: ${{ inputs.automation_ref }}
           path: .release-tools
 
       - name: Calculate next version
         id: version
         env:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           TAGS="$(git tag --list 'v*' --format='%(refname:short)')"
-          TAG="$(node .release-tools/scripts/release-version.cjs "$TAGS" "$PR_LABELS" "$MERGE_SHA")"
+          TAG="$(node .release-tools/scripts/release-version.cjs "$TAGS" "$PR_LABELS")"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Create tag, release, and dispatch
