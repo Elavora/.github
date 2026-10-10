@@ -76,7 +76,7 @@ jobs:
             });
 
       - name: Notify Packagist
-        if: ${{ secrets.PACKAGIST_WEBHOOK_URL != '' }}
+        if: env.PACKAGIST_WEBHOOK_URL != ''
         env:
           PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
         run: curl --fail --silent --show-error --request POST "$PACKAGIST_WEBHOOK_URL"
