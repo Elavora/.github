@@ -1,8 +1,8 @@
 'use strict';
 
 const [rawTags = '', rawLabels = '[]'] = process.argv.slice(2);
-const TAG_PATTERN = /^v(\\d+)\\.(\\d+)\\.(\\d+)(?:-rc\\.(\\d+))?$/;
-const tags = rawTags.split(/\\s+/).filter(Boolean).map((name) => {
+const TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$/;
+const tags = rawTags.split(/\s+/).filter(Boolean).map((name) => {
   const match = TAG_PATTERN.exec(name);
   return match && {
     name, major: Number(match[1]), minor: Number(match[2]),
@@ -20,9 +20,11 @@ const pending = tags.filter((tag) => tag.rc !== null
     || (tag.major === stable.major && tag.minor === stable.minor && tag.patch > stable.patch)))
   .sort(compare);
 let target;
+let sourceTag = null;
 if (publishStable && pending.length) {
   const last = pending.at(-1);
   target = { major: last.major, minor: last.minor, patch: last.patch, rc: null };
+  sourceTag = last.name;
 } else {
   target = { major: stable.major, minor: stable.minor, patch: stable.patch, rc: null };
   if (labels.includes('upgrade') || labels.includes('major') || labels.includes('breaking')) {
@@ -46,4 +48,5 @@ if (!publishStable) {
   target.rc = (previous?.rc ?? 0) + 1;
 }
 const base = `v${target.major}.${target.minor}.${target.patch}`;
-process.stdout.write(target.rc === null ? base : `${base}-rc.${target.rc}`);
+const tag = target.rc === null ? base : `${base}-rc.${target.rc}`;
+process.stdout.write(`${tag}\t${sourceTag ?? ''}`);
