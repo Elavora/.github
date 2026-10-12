@@ -1,0 +1,107 @@
+[
+  {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": "Correção de comportamento incorreto; incremento patch."
+  },
+  {
+    "name": "documentation",
+    "color": "0075ca",
+    "description": "Alteração de documentação; incremento patch."
+  },
+  {
+    "name": "dependencies",
+    "color": "0366d6",
+    "description": "Atualização de dependências; incremento minor."
+  },
+  {
+    "name": "enhancement",
+    "color": "a2eeef",
+    "description": "Melhoria ou funcionalidade compatível; incremento minor."
+  },
+  {
+    "name": "improvement",
+    "color": "84b6eb",
+    "description": "Melhoria compatível; incremento minor."
+  },
+  {
+    "name": "feature",
+    "color": "0e8a16",
+    "description": "Nova funcionalidade compatível; incremento minor."
+  },
+  {
+    "name": "upgrade",
+    "color": "5319e7",
+    "description": "Alteração incompatível; incremento major."
+  },
+  {
+    "name": "breaking",
+    "color": "b60205",
+    "description": "Alteração incompatível; incremento major."
+  },
+  {
+    "name": "major",
+    "color": "b60205",
+    "description": "Solicita incremento major."
+  },
+  {
+    "name": "minor",
+    "color": "fbca04",
+    "description": "Solicita incremento minor."
+  },
+  {
+    "name": "patch",
+    "color": "c2e0c6",
+    "description": "Solicita incremento patch."
+  },
+  {
+    "name": "release",
+    "color": "0052cc",
+    "description": "Promove a pré-release pendente para versão estável."
+  },
+  {
+    "name": "refactor",
+    "color": "fbca04",
+    "description": "Refatoração sem mudança funcional; incremento patch."
+  },
+  {
+    "name": "tests",
+    "color": "bfdadc",
+    "description": "Alteração de testes; incremento patch."
+  },
+  {
+    "name": "deprecated",
+    "color": "e4e669",
+    "description": "Recurso obsoleto ou em processo de remoção."
+  },
+  {
+    "name": "duplicate",
+    "color": "cfd3d7",
+    "description": "Issue ou pull request duplicado."
+  },
+  {
+    "name": "invalid",
+    "color": "e4e669",
+    "description": "Issue ou pull request sem informações ou contexto válido."
+  },
+  {
+    "name": "question",
+    "color": "d876e3",
+    "description": "Pedido de esclarecimento ou discussão."
+  },
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Boa issue para uma primeira contribuição."
+  },
+  {
+    "name": "help wanted",
+    "color": "008672",
+    "description": "Contribuições da comunidade são bem-vindas."
+  },
+  {
+    "name": "wontfix",
+    "color": "ffffff",
+    "description": "Esta solicitação não será implementada."
+  }
+]
