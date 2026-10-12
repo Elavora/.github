@@ -1,0 +1,71 @@
+name: Sincronizar labels compartilhadas
+
+on:
+  workflow_call:
+    inputs:
+      automation_ref:
+        description: SHA imutável do repositório Elavora/.github que contém o catálogo de labels.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o catálogo central
+        uses: actions/checkout@v4
+        with:
+          repository: Elavora/.github
+          ref: ${{ inputs.automation_ref }}
+          path: .shared-automation
+          sparse-checkout: .github/labels.json
+
+      - name: Criar e atualizar labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const definitions = JSON.parse(
+              fs.readFileSync('.shared-automation/.github/labels.json', 'utf8'),
+            );
+            const { owner, repo } = context.repo;
+            const existing = await github.paginate(
+              github.rest.issues.listLabelsForRepo,
+              { owner, repo, per_page: 100 },
+            );
+            const byName = new Map(existing.map((label) => [label.name.toLowerCase(), label]));
+            let created = 0;
+            let updated = 0;
+
+            for (const definition of definitions) {
+              const label = byName.get(definition.name.toLowerCase());
+              if (!label) {
+                await github.rest.issues.createLabel({
+                  owner, repo,
+                  name: definition.name,
+                  color: definition.color,
+                  description: definition.description,
+                });
+                created += 1;
+                continue;
+              }
+
+              if (label.color.toLowerCase() !== definition.color.toLowerCase()
+                || (label.description || '') !== definition.description) {
+                await github.rest.issues.updateLabel({
+                  owner, repo,
+                  name: label.name,
+                  new_name: definition.name,
+                  color: definition.color,
+                  description: definition.description,
+                });
+                updated += 1;
+              }
+            }
+
+            core.info(`Labels criadas: ${created}; atualizadas: ${updated}.`);
+            core.notice('Labels que não constam no catálogo foram preservadas.');
