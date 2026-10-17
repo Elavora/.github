@@ -126,10 +126,11 @@ descrição do catálogo), `php`, `Major` e `IA`:
 
 | Entrada | Tipo | Obrigatória | Uso |
 | --- | --- | --- | --- |
-| `automation_ref` | string | sim | versão do `.github` (tag estável ou SHA completo), a mesma do `uses` |
+| `automation_ref` | string | não | versão do `.github` (tag estável ou SHA completo), a mesma do `uses`. Sem ela, a versão é descoberta pelo OIDC (ver [versao-da-automacao.md](versao-da-automacao.md)) |
 
-1. Faz checkout de `Elavora/.github` em `automation_ref`, só com `.github/labels.json` e `scripts/`, sem persistir
-   credenciais.
+1. Resolve a versão da automação, faz checkout de `Elavora/.github` nessa versão, só com `.github/labels.json` e
+   `scripts/`, sem persistir credenciais, e confere a versão com `resolveAutomationRef` (passos comuns em
+   [versao-da-automacao.md](versao-da-automacao.md#passos-comuns-aos-três-workflows)).
 2. Valida o catálogo com `validateCatalog`. Se o catálogo for inválido, falha sem alterar nada. Isso impede que um
    catálogo quebrado apague todas as labels.
 3. Lista todas as labels do repositório chamador (com paginação), calcula o plano com `planLabelSync` e aplica as
@@ -138,7 +139,8 @@ descrição do catálogo), `php`, `Major` e `IA`:
 4. Publica um resumo com as quantidades e os nomes das labels criadas, atualizadas e removidas, e a quantidade das
    inalteradas.
 
-Permissões necessárias no chamador: `contents: read` e `issues: write`.
+Permissões necessárias no chamador: `contents: read`, `issues: write` e `id-token: write` (esta só quando
+`automation_ref` é omitido). O workflow reutilizável não declara `permissions` e herda as do chamador.
 
 ## Workflow chamador em cada repositório
 
@@ -160,10 +162,12 @@ jobs:
     permissions:
       contents: read
       issues: write
-    uses: Elavora/.github/.github/workflows/sync-labels.yml@1.0.0
-    with:
-      automation_ref: 1.0.0
+      id-token: write
+    uses: Elavora/.github/.github/workflows/sync-labels.yml@1.1.0
 ```
+
+A versão aparece uma vez só, no `uses`, e o Dependabot consegue atualizá-la. Um chamador da `1.0.0`, com
+`automation_ref` igual ao `uses` e sem `id-token: write`, continua funcionando.
 
 A execução semanal aplica as mudanças do catálogo em todos os repositórios, mesmo nos que não recebem commits.
 `workflow_dispatch` serve para aplicar na hora, por exemplo logo depois de adotar uma nova versão do `.github`.

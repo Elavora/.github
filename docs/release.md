@@ -12,15 +12,13 @@ Quando um pull request é integrado na `main`, esse chamador aciona o workflow r
 
 ## Versionamento do próprio `.github`
 
-O `.github` é versionado pelo mesmo fluxo, e os consumidores fixam uma versão dele:
+O `.github` é versionado pelo mesmo fluxo, e os consumidores fixam uma versão dele no `uses`
+(`Elavora/.github/.github/workflows/release.yml@1.1.0`): uma tag estável, recomendada, ou um SHA completo.
 
-- `uses: Elavora/.github/.github/workflows/release.yml@<ref>` e `automation_ref: <ref>` precisam receber **o mesmo
-  valor**: uma tag estável (`1.0.0`, recomendado) ou um SHA completo de 40 caracteres. O `automation_ref` define de
-  qual versão vêm os scripts, e um valor diferente do `uses` mistura duas versões da automação.
-- Não use `main`, nome de branch ou tag beta nos consumidores. Uma beta só serve para testar uma versão nova do
-  `.github` em um repositório antes da estável.
-- Não existem tags móveis (`1`, `latest`). Para atualizar a automação, o consumidor troca a versão nas duas posições.
-- `automation_ref` vazio faz o workflow falhar antes de criar qualquer tag.
+A partir da `1.1.0`, a entrada `automation_ref` é opcional. Sem ela, o workflow descobre a própria versão pelo
+token OIDC (claim `job_workflow_sha`), e o chamador concede `id-token: write`. Com ela, o comportamento é o da
+`1.0.0`, e o valor precisa ser igual ao do `uses`. As regras completas, os riscos (OIDC desabilitado, forks) e a
+função `resolveAutomationRef` estão em [versao-da-automacao.md](versao-da-automacao.md).
 
 ## Workflow reutilizável `release.yml`
 
@@ -30,7 +28,7 @@ Só `workflow_call`. Ele espera ser chamado a partir de um evento `pull_request`
 
 | Entrada | Tipo | Obrigatória | Padrão | Uso |
 | --- | --- | --- | --- | --- |
-| `automation_ref` | string | sim | - | versão do `.github` (tag ou SHA) usada para baixar os scripts |
+| `automation_ref` | string | não | `''` (descobre pelo OIDC) | versão do `.github` (tag ou SHA) usada para baixar os scripts; ver [versao-da-automacao.md](versao-da-automacao.md) |
 | `package_name` | string | não | nome do repositório (`github.repository`) | aparece no título da release |
 | `packagist` | boolean | não | `true` | pede a atualização do Packagist depois da release |
 
@@ -45,9 +43,10 @@ Só `workflow_call`. Ele espera ser chamado a partir de um evento `pull_request`
 
 ### Permissões
 
-O job do chamador precisa conceder `contents: write` (para criar tag e release) e `pull-requests: read` (para
-levantar os PRs do intervalo, ver abaixo), porque um workflow reutilizável não consegue pedir mais permissões do
-que o chamador deu. O job do Packagist usa só `contents: read`.
+O job do chamador precisa conceder `contents: write` (para criar tag e release), `pull-requests: read` (para
+levantar os PRs do intervalo, ver abaixo) e `id-token: write` (para descobrir a versão da automação quando
+`automation_ref` é omitido). O workflow reutilizável não declara `permissions` e herda as do chamador, inclusive no
+job do Packagist (ver [versao-da-automacao.md](versao-da-automacao.md#permissões)).
 
 ### Condições de execução
 
@@ -71,8 +70,10 @@ os seus commits. No exemplo, ficam as tags de A e de C, e não existe tag aponta
 ### Job `release`
 
 1. Faz checkout do repositório no `merge_commit_sha` do PR, com o histórico e as tags completos.
-2. Faz checkout de `Elavora/.github` em `automation_ref`, só com `scripts/`, em `.elavora/` e sem persistir
-   credenciais.
+2. Resolve a versão da automação, faz checkout de `Elavora/.github` nessa versão, só com `scripts/`, em `.elavora/` e
+   sem persistir credenciais, e confere a versão com `resolveAutomationRef` (passos comuns em
+   [versao-da-automacao.md](versao-da-automacao.md#passos-comuns-aos-três-workflows)). O ref resolvido vira a saída
+   interna `automation_ref` do job.
 3. **Idempotência**:
    - se uma tag reconhecida pelo formato novo (`X.Y.Z` ou `X.Y.Z-beta.N`) já aponta para o `merge_commit_sha`, ela
      é reaproveitada e não se cria outra. Assim, reexecutar o workflow do mesmo merge não gera versão duplicada;
@@ -130,7 +131,7 @@ Roda depois do job `release` (`needs: release`), quando ele termina com sucesso 
 Por ser um job separado, uma falha aqui pode ser corrigida com **Re-run failed jobs**, sem tocar na tag nem na
 release.
 
-1. Faz checkout só de `scripts/` do `.github` em `automation_ref`.
+1. Faz checkout só de `scripts/` do `.github` no ref resolvido pelo job `release` (`needs.release.outputs.automation_ref`).
 2. Chama `notifyPackagist` de `scripts/packagist.cjs` com o repositório (`Elavora/<repo>`) e o secret.
 3. Sucesso: resumo com o repositório e o número de tentativas. Falha: o job falha com a mensagem, e o secret
    nunca é impresso (é registrado com `core.setSecret`).
@@ -205,16 +206,18 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
-    uses: Elavora/.github/.github/workflows/release.yml@1.0.0
+      id-token: write
+    uses: Elavora/.github/.github/workflows/release.yml@1.1.0
     with:
-      automation_ref: 1.0.0
       package_name: elavora/api-framework
     secrets:
       PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
 ```
 
-Troque `1.0.0` pela versão estável atual do `.github`, nas duas posições, e `package_name` pelo `name` do
-`composer.json` do repositório.
+Troque `1.1.0` pela versão estável atual do `.github` e `package_name` pelo `name` do `composer.json` do
+repositório. A versão aparece uma vez só, no `uses`, e o Dependabot consegue atualizá-la. Um chamador da `1.0.0`
+(com `automation_ref` e sem `id-token: write`) continua funcionando, desde que `automation_ref` e `uses` tenham o
+mesmo valor.
 
 ### `devcontainers`
 

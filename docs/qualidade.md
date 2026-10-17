@@ -62,8 +62,9 @@ precisam de formatação (ver [Modo de formatação](#modo-de-formatação-commi
    o pacote no `require-dev`, o stub `.php-cs-fixer.dist.php` e o `.editorconfig` copiado pelo comando do pacote.
 2. Acrescente ao `.gitignore` as linhas `/.elavora/` (a pasta onde o CI guarda os scripts centrais) e
    `/.php-cs-fixer.php` (o override pessoal).
-3. Crie `.github/workflows/quality.yml` com o chamador abaixo. Troque `1.1.0` pela versão estável atual do `.github`
-   **nas duas posições**, pela mesma regra do release (ver [release.md](release.md#versionamento-do-próprio-github)):
+3. Crie `.github/workflows/quality.yml` com o chamador abaixo, com a versão estável atual do `.github` no `uses`.
+   A versão aparece uma vez só, e o workflow descobre a própria versão pelo OIDC (ver
+   [versao-da-automacao.md](versao-da-automacao.md)):
 
    ```yaml
    name: Qualidade
@@ -82,9 +83,8 @@ precisam de formatação (ver [Modo de formatação](#modo-de-formatação-commi
        permissions:
          contents: write
          pull-requests: write
+         id-token: write
        uses: Elavora/.github/.github/workflows/php-quality.yml@1.1.0
-       with:
-         automation_ref: 1.1.0
    ```
 
 4. Use no `.devcontainer/devcontainer.json` a imagem `8.3-0.2.0` ou mais nova (ver [No devcontainer](#no-devcontainer)).
@@ -190,14 +190,13 @@ Só `workflow_call`. Ele espera ser chamado a partir de `pull_request` ou de `pu
 
 | Entrada | Tipo | Obrigatória | Padrão | Uso |
 | --- | --- | --- | --- | --- |
-| `automation_ref` | string | sim | - | versão do `.github` (tag estável ou SHA completo), a mesma do `uses` |
+| `automation_ref` | string | não | `''` (descobre pelo OIDC) | versão do `.github` (tag estável ou SHA completo), a mesma do `uses`; ver [versao-da-automacao.md](versao-da-automacao.md) |
 | `image` | string | não | `ghcr.io/elavora/php-dev:8.3-0.2.0` | imagem do job; use só imagens `ghcr.io/elavora/php-dev` |
 | `coverage_min` | number | não | `80` | cobertura mínima em %. Abaixo dela, o relatório mostra aviso, sem erro. `0` desliga a etapa |
 | `composer_audit` | boolean | não | `true` | roda `composer audit` depois de instalar as dependências |
 | `dependencies` | string | não | `lowest` | `lowest` instala as versões mínimas; `install` usa `composer install` |
 
-Não há secrets. `automation_ref` vazio faz o job falhar antes de qualquer outro passo. Um valor de `dependencies`
-fora de `lowest` e `install` também faz o job falhar logo no início.
+Não há secrets. Um valor de `dependencies` fora de `lowest` e `install` faz o job falhar logo no início.
 
 As três opções vêm ligadas porque reproduzem o que o `api-framework` já fazia no CI antigo: cobertura de 80%,
 dependências mínimas e auditoria. Um repositório desliga uma delas passando o valor no `with` do chamador.
@@ -205,9 +204,10 @@ Não há matriz de versões de PHP, porque a imagem só tem o PHP 8.3; uma matri
 
 ### Permissões
 
-O job do chamador precisa conceder `contents: write` (para enviar o commit de formatação) e
-`pull-requests: write` (para o comentário). Um workflow reutilizável não consegue pedir mais permissões do que o
-chamador deu.
+O job do chamador precisa conceder `contents: write` (para enviar o commit de formatação), `pull-requests: write`
+(para o comentário) e `id-token: write` (para descobrir a versão da automação quando `automation_ref` é omitido).
+O workflow reutilizável não declara `permissions` e herda as do chamador (ver
+[versao-da-automacao.md](versao-da-automacao.md#permissões)).
 
 ### Nomes de job e de check
 
@@ -239,15 +239,17 @@ Grupo `elavora-quality-${{ github.repository }}-${{ github.event.pull_request.nu
 
 ### Passos
 
-1. **Validar as entradas**: falha se `automation_ref` estiver vazio ou se `dependencies` não for `lowest` nem
-   `install`.
+1. **Validar as entradas**: falha se `dependencies` não for `lowest` nem `install`. Em seguida, obtém a versão da
+   automação (`automation_ref` ou a claim `job_workflow_sha` do OIDC), como nos passos comuns de
+   [versao-da-automacao.md](versao-da-automacao.md#passos-comuns-aos-três-workflows). Sem as duas, o job falha aqui,
+   antes do relatório.
 2. **Checkout do repositório**, com `fetch-depth: 1` e **sem** persistir credenciais:
    - em `pull_request`: `ref: github.event.pull_request.head.sha`, o último commit da branch do PR (e não o merge
      com a `main`, porque a correção de formatação precisa ser commitada na branch);
    - em `push`: `github.sha`.
 3. **Marcar o diretório como seguro** para o git (`git config --global --add safe.directory "$GITHUB_WORKSPACE"`).
-4. **Checkout dos scripts**: `Elavora/.github` em `automation_ref`, em `.elavora/`, só com `scripts/`, sem persistir
-   credenciais.
+4. **Checkout dos scripts**: `Elavora/.github` na versão obtida no passo 1, em `.elavora/`, só com `scripts/`, sem
+   persistir credenciais. Depois, confere a versão com `resolveAutomationRef`.
 5. **Decidir o modo de formatação** com `formatMode` (ver [Referência](#referência-scriptsqualitycjs)): `commit` ou
    `report`, e o motivo.
 6. **Ler os scripts do Composer** com `composerScripts` sobre o `composer.json`.
@@ -352,8 +354,9 @@ o commit acontece antes deles, e as etapas seguintes rodam sobre o código já c
 - Serviços de integração (Redis, MySQL, PostgreSQL, MongoDB), que o workflow antigo subia, não fazem parte da
   1.1.0. Testes que dependem deles precisam ficar fora do `composer test` por enquanto.
 - Só PHP 8.3, a versão da imagem.
-- O Dependabot (ecossistema `github-actions`) atualiza a versão no `uses:` do chamador, mas não a entrada
-  `automation_ref`. No PR do Dependabot, confira e ajuste as duas posições para o mesmo valor.
+- PRs de fork não recebem `id-token`, e o job falha no passo 1 com uma mensagem pedindo o `automation_ref`, sem
+  relatório nem comentário. Nos PRs do Dependabot, a concessão do `id-token` precisa ser conferida no primeiro PR
+  real (ver [versao-da-automacao.md](versao-da-automacao.md#riscos-e-limitações)).
 
 ## Referência: `scripts/quality.cjs`
 
@@ -590,8 +593,11 @@ Comentários de outros autores com o marcador são ignorados.
 
 ## O que muda no `.github`
 
-- Novos: `.github/workflows/php-quality.yml`, `scripts/quality.cjs` e os testes dele em `tests/`. Os testes entram
-  no `node --test "tests/*.test.cjs"` que o workflow `Testes` já roda. O `test.yml` não muda.
+- Novos: `.github/workflows/php-quality.yml`, `scripts/quality.cjs`, `scripts/automation-ref.cjs` e os testes deles
+  em `tests/`. Os testes entram no `node --test "tests/*.test.cjs"` que o workflow `Testes` já roda. O `test.yml`
+  não muda.
+- `release.yml` e `sync-labels.yml`: `automation_ref` passa a ser opcional, a versão é resolvida pelos passos comuns
+  e os workflows deixam de declarar `permissions` (ver [versao-da-automacao.md](versao-da-automacao.md)).
 - Este repositório não guarda regras de estilo. Elas ficam no `elavora/code-standards`.
 - Esta mudança substitui e amplia o item 2 da fila de automação ("testes automáticos em PR"): além dos testes, o
   workflow formata, faz o lint, audita as dependências e mede a cobertura.
