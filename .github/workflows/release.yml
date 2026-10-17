@@ -1,93 +1,219 @@
-name: Reusable semantic release
+name: Release reutilizável
+
+# Especificação: docs/release.md e docs/versionamento.md
 
 on:
   workflow_call:
     inputs:
-      package_name:
-        description: Composer package name used in release notes.
-        required: true
-        type: string
       automation_ref:
-        description: Immutable commit SHA of Elavora/.github containing this workflow and its helper.
+        description: Versão do Elavora/.github (tag estável ou SHA completo), a mesma do uses.
         required: true
         type: string
+      package_name:
+        description: Nome exibido no título da release. Padrão é o nome do repositório.
+        required: false
+        type: string
+        default: ''
+      packagist:
+        description: Pede ao Packagist que atualize o pacote depois da release.
+        required: false
+        type: boolean
+        default: true
     secrets:
       PACKAGIST_WEBHOOK_URL:
+        description: Endpoint update-package do Packagist com username e apiToken.
         required: false
     outputs:
       tag:
-        description: Created release tag.
+        description: Tag criada ou reaproveitada.
         value: ${{ jobs.release.outputs.tag }}
+      prerelease:
+        description: "'true' para beta, 'false' para estável."
+        value: ${{ jobs.release.outputs.prerelease }}
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
+    name: Criar tag e release
     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
     concurrency:
-      group: semantic-release-${{ github.repository }}
-      queue: max
+      group: elavora-release-${{ github.repository }}
+      cancel-in-progress: false
     outputs:
       tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - name: Check out merged source
+      - name: Validar automation_ref
+        env:
+          AUTOMATION_REF: ${{ inputs.automation_ref }}
+        run: |
+          if [[ -z "${AUTOMATION_REF// /}" ]]; then
+            echo "::error::automation_ref é obrigatório (tag estável ou SHA completo do Elavora/.github)."
+            exit 1
+          fi
+
+      - name: Checkout do merge
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
+          fetch-tags: true
 
-      - name: Check out shared release helper
+      - name: Checkout dos scripts do Elavora/.github
         uses: actions/checkout@v4
         with:
           repository: Elavora/.github
           ref: ${{ inputs.automation_ref }}
-          path: .release-tools
+          path: .elavora
+          persist-credentials: false
+          sparse-checkout: scripts
 
-      - name: Calculate next version
+      - name: Calcular a versão
         id: version
         env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          TAGS="$(git tag --list 'v*' --format='%(refname:short)')"
-          RESULT="$(node .release-tools/scripts/release-version.cjs "$TAGS" "$PR_LABELS")"
-          IFS=$'\t' read -r TAG SOURCE_TAG <<< "$RESULT"
-          if [[ -n "$SOURCE_TAG" ]]; then
-            TARGET_SHA="$(git rev-parse "${SOURCE_TAG}^{commit}")"
-          else
-            TARGET_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          NUM='(0|[1-9][0-9]*)'
+          PATTERN="^${NUM}\.${NUM}\.${NUM}(-beta\.[1-9][0-9]*)?$"
 
-      - name: Create tag, release, and dispatch
+          # Idempotência: uma tag no formato novo que já aponta para o merge é reaproveitada.
+          EXISTING="$(git tag --points-at "$MERGE_SHA" | grep -E "$PATTERN" | sort -V | tail -n 1 || true)"
+          if [[ -n "$EXISTING" ]]; then
+            TAG="$EXISTING"
+            if [[ "$TAG" == *-beta.* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
+            BUMP='(tag reaproveitada)'
+            PREVIOUS='-'
+            REUSED=true
+          else
+            TAGS="$(git tag --list)"
+            RESULT="$(node .elavora/scripts/release-version.cjs "$TAGS" "$PR_LABELS")"
+            TAG="$(jq -r '.tag' <<< "$RESULT")"
+            PRERELEASE="$(jq -r '.prerelease' <<< "$RESULT")"
+            BUMP="$(jq -r '.bump' <<< "$RESULT")"
+            PREVIOUS="$(jq -r '.previous // "-"' <<< "$RESULT")"
+            REUSED=false
+          fi
+
+          {
+            echo "tag=$TAG"
+            echo "prerelease=$PRERELEASE"
+            echo "bump=$BUMP"
+            echo "previous=$PREVIOUS"
+            echo "reused=$REUSED"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Criar tag, release e dispatch
+        id: publish
         uses: actions/github-script@v7
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
-          RELEASE_SHA: ${{ steps.version.outputs.target_sha }}
-          PACKAGE_NAME: ${{ inputs.package_name }}
+          RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          RELEASE_REUSED: ${{ steps.version.outputs.reused }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PACKAGE_NAME: ${{ inputs.package_name || github.repository }}
         with:
           script: |
             const tag = process.env.RELEASE_TAG;
-            const sha = process.env.RELEASE_SHA;
+            const sha = process.env.MERGE_SHA;
+            const prerelease = process.env.RELEASE_PRERELEASE === 'true';
             const { owner, repo } = context.repo;
-            await github.rest.git.createRef({
-              owner, repo, ref: `refs/tags/${tag}`, sha,
-            });
-            const release = await github.rest.repos.createRelease({
-              owner, repo, tag_name: tag, target_commitish: sha,
-              name: `${process.env.PACKAGE_NAME} ${tag}`,
-              prerelease: tag.includes('-'),
-              generate_release_notes: true,
-            });
+
+            if (process.env.RELEASE_REUSED !== 'true') {
+              await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tag}`, sha });
+            }
+
+            let release;
+            try {
+              release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
+              core.info(`Release ${tag} já existe; reaproveitada.`);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              release = (await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: `${process.env.PACKAGE_NAME} ${tag}`,
+                prerelease,
+                make_latest: prerelease ? 'false' : 'true',
+                generate_release_notes: true,
+              })).data;
+            }
+
             await github.rest.repos.createDispatchEvent({
-              owner, repo, event_type: 'tag-created',
-              client_payload: { tag, release_id: release.data.id },
+              owner,
+              repo,
+              event_type: 'tag-created',
+              client_payload: { tag, release_id: release.id, prerelease },
             });
 
-      - name: Notify Packagist
-        if: env.PACKAGIST_WEBHOOK_URL != ''
+      - name: Resumo
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          RELEASE_BUMP: ${{ steps.version.outputs.bump }}
+          RELEASE_PREVIOUS: ${{ steps.version.outputs.previous }}
+        run: |
+          {
+            echo "## Release $RELEASE_TAG"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "| --- | --- |"
+            echo "| Tag | \`$RELEASE_TAG\` |"
+            echo "| Pré-release | $RELEASE_PRERELEASE |"
+            echo "| Incremento | $RELEASE_BUMP |"
+            echo "| Estável anterior | $RELEASE_PREVIOUS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  packagist:
+    name: Atualizar Packagist
+    needs: release
+    if: needs.release.result == 'success' && inputs.packagist
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout dos scripts do Elavora/.github
+        uses: actions/checkout@v4
+        with:
+          repository: Elavora/.github
+          ref: ${{ inputs.automation_ref }}
+          path: .elavora
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Notificar o Packagist
+        uses: actions/github-script@v7
         env:
           PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
-        run: curl --fail --silent --show-error --request POST "$PACKAGIST_WEBHOOK_URL"
+        with:
+          script: |
+            const webhookUrl = process.env.PACKAGIST_WEBHOOK_URL;
+            if (webhookUrl) {
+              core.setSecret(webhookUrl);
+              try {
+                const token = new URL(webhookUrl).searchParams.get('apiToken');
+                if (token) core.setSecret(token);
+              } catch {
+                // URL inválida: notifyPackagist rejeita com a mensagem de credentials.
+              }
+            }
+            const { notifyPackagist } = require(`${process.env.GITHUB_WORKSPACE}/.elavora/scripts/packagist.cjs`);
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            try {
+              const { attempts } = await notifyPackagist({ repository, webhookUrl });
+              await core.summary
+                .addHeading('Packagist atualizado', 2)
+                .addRaw(`Repositório: ${repository}. Tentativas: ${attempts}.`, true)
+                .write();
+            } catch (error) {
+              core.setFailed(error.message);
+            }
