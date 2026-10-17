@@ -71,7 +71,9 @@ test.describe('credentials', () => {
     ['não é URL', 'não é uma url'],
     ['http', `http://packagist.org/api/update-package?username=${USER}&apiToken=${TOKEN}`],
     ['outro host', `https://example.com/api/update-package?username=${USER}&apiToken=${TOKEN}`],
-    ['subdomínio', `https://evil.packagist.org/api/update-package?username=${USER}&apiToken=${TOKEN}`],
+    ['subdomínio evil', `https://evil.packagist.org/api/update-package?username=${USER}&apiToken=${TOKEN}`],
+    ['subdomínio www', `https://www.packagist.org/api/update-package?username=${USER}&apiToken=${TOKEN}`],
+    ['host com sufixo', `https://packagist.org.evil.com/api/update-package?username=${USER}&apiToken=${TOKEN}`],
     ['outro caminho', `https://packagist.org/api/github?username=${USER}&apiToken=${TOKEN}`],
     ['sem username', `https://packagist.org/api/update-package?apiToken=${TOKEN}`],
     ['sem apiToken', `https://packagist.org/api/update-package?username=${USER}`],
@@ -136,6 +138,28 @@ test.describe('notifyPackagist', () => {
       await assert.rejects(
         async () => notifyPackagist({ repository, webhookUrl: WEBHOOK, fetchImpl, sleep: fakeSleep() }),
         Error,
+      );
+      assert.equal(fetchImpl.calls.length, 0);
+    });
+  }
+
+  for (const [nome, webhookUrl] of [
+    ['ausente', undefined],
+    ['vazio', ''],
+    ['outro host', `https://example.com/api/update-package?username=${USER}&apiToken=${TOKEN}`],
+    ['subdomínio', `https://www.packagist.org/api/update-package?username=${USER}&apiToken=${TOKEN}`],
+    ['sem apiToken', `https://packagist.org/api/update-package?username=${USER}`],
+  ]) {
+    test(`secret ${nome}: rejeita com erro de credentials antes de qualquer fetch`, async () => {
+      const fetchImpl = fakeFetch([sucesso]);
+      await assert.rejects(
+        async () => notifyPackagist({ repository: REPO, webhookUrl, fetchImpl, sleep: fakeSleep() }),
+        (e) => {
+          assert.ok(e instanceof Error);
+          assert.match(e.message, /PACKAGIST_WEBHOOK_URL/);
+          assert.ok(!e.message.includes(TOKEN));
+          return true;
+        },
       );
       assert.equal(fetchImpl.calls.length, 0);
     });

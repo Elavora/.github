@@ -7,7 +7,24 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'release-version.cjs');
-const { parseTag, bumpFromLabels, nextVersion } = require(SCRIPT);
+const { parseTag, bumpFromLabels, nextVersion, BUMP_LABELS } = require(SCRIPT);
+
+test.describe('BUMP_LABELS', () => {
+  test('mapeamento documentado, em minúsculas', () => {
+    assert.ok(BUMP_LABELS && typeof BUMP_LABELS === 'object', 'BUMP_LABELS precisa ser exportado');
+    assert.deepEqual(Object.keys(BUMP_LABELS).sort(), ['major', 'minor']);
+    assert.deepEqual([...BUMP_LABELS.major].sort(), ['upgrade']);
+    assert.deepEqual([...BUMP_LABELS.minor].sort(), ['enhancement', 'feature', 'improvement']);
+    for (const nome of [...BUMP_LABELS.major, ...BUMP_LABELS.minor]) {
+      assert.equal(nome, nome.toLowerCase());
+    }
+  });
+
+  test('bumpFromLabels segue BUMP_LABELS', () => {
+    for (const nome of BUMP_LABELS.major) assert.equal(bumpFromLabels([nome]), 'major');
+    for (const nome of BUMP_LABELS.minor) assert.equal(bumpFromLabels([nome]), 'minor');
+  });
+});
 
 test.describe('parseTag', () => {
   test('estável 1.2.0', () => {
@@ -69,26 +86,33 @@ test.describe('bumpFromLabels', () => {
     [['upgrade'], 'major'],
     [['enhancement'], 'minor'],
     [['feature'], 'minor'],
+    [['improvement'], 'minor'],
     [['bug'], 'patch'],
     [['documentation'], 'patch'],
     [['tests'], 'patch'],
     [['refactor'], 'patch'],
+    [['deprecated'], 'patch'],
     [['dependencies'], 'patch'],
+    [['question'], 'patch'],
     [['release'], 'patch'],
     [['bug', 'enhancement'], 'minor'],
     [['bug', 'Enhancement'], 'minor'],
     [['upgrade', 'bug'], 'major'],
     [['bug', 'enhancement', 'upgrade'], 'major'],
-    [['feature', 'enhancement'], 'minor'],
+    [['feature', 'enhancement', 'improvement'], 'minor'],
+    [['dependencies', 'feature'], 'minor'],
+    [['improvement', 'upgrade'], 'major'],
     [['Upgrade'], 'major'],
     [['FEATURE'], 'minor'],
-    // aliases antigos valem patch, como qualquer label desconhecida
+    [['Improvement'], 'minor'],
+    // labels obsoletas valem patch, como qualquer label desconhecida
     [['major'], 'patch'],
     [['minor'], 'patch'],
     [['patch'], 'patch'],
     [['breaking'], 'patch'],
-    [['improvement'], 'patch'],
+    [['breaking', 'major', 'minor'], 'patch'],
     [['IA'], 'patch'],
+    [['php'], 'patch'],
   ];
   for (const [labels, esperado] of casos) {
     test(`${JSON.stringify(labels)} → ${esperado}`, () => {
@@ -109,7 +133,11 @@ test.describe('nextVersion: tabela de exemplos da documentação', () => {
     [['1.1.1', '1.1.2-beta.1'], ['bug'], '1.1.2-beta.2', 'patch', '1.1.1'],
     [['1.1.1', '1.1.2-beta.2'], ['enhancement'], '1.2.0-beta.1', 'minor', '1.1.1'],
     [['1.1.1', '1.1.2-beta.2', '1.2.0-beta.1'], ['bug'], '1.2.0-beta.2', 'patch', '1.1.1'],
-    [['1.1.1', '1.2.0-beta.1'], ['feature'], '1.2.0-beta.2', 'minor', '1.1.1'],
+    [['1.1.1', '1.2.0-beta.1'], ['question'], '1.2.0-beta.2', 'patch', '1.1.1'],
+    [['1.1.1'], ['feature'], '1.2.0-beta.1', 'minor', '1.1.1'],
+    [['1.1.1'], ['improvement'], '1.2.0-beta.1', 'minor', '1.1.1'],
+    [['1.1.1'], ['refactor', 'tests', 'deprecated'], '1.1.2-beta.1', 'patch', '1.1.1'],
+    [['1.1.1'], ['dependencies', 'feature'], '1.2.0-beta.1', 'minor', '1.1.1'],
     [['1.1.1', '1.2.0-beta.3'], ['upgrade'], '2.0.0-beta.1', 'major', '1.1.1'],
     [['1.1.1', '1.2.0-beta.3'], ['release'], '1.2.0', 'patch', '1.1.1'],
     [['1.1.1', '1.2.0-beta.3'], ['release', 'bug'], '1.2.0', 'patch', '1.1.1'],
@@ -185,9 +213,17 @@ test.describe('nextVersion: regras do algoritmo', () => {
   });
 
   test('legada e nova com o mesmo número representam a mesma versão', () => {
-    const r = nextVersion({ tags: ['v1.2.0', '1.2.0'], labels: ['bug'] });
-    assert.equal(r.tag, '1.2.1-beta.1');
-    assert.equal(r.version, '1.2.1');
+    for (const tags of [['v1.2.0', '1.2.0'], ['1.2.0', 'v1.2.0']]) {
+      const r = nextVersion({ tags, labels: ['bug'] });
+      assert.equal(r.tag, '1.2.1-beta.1');
+      assert.equal(r.version, '1.2.1');
+      assert.equal(r.previous, '1.2.0', 'com as duas formas, previous é o nome sem prefixo');
+    }
+  });
+
+  test('só a legada existe: previous é a legada', () => {
+    const r = nextVersion({ tags: ['v1.2.0', 'v1.1.0'], labels: ['bug'] });
+    assert.equal(r.previous, 'v1.2.0');
   });
 
   test('estável legada superando beta nova com a mesma base', () => {
@@ -257,9 +293,34 @@ test.describe('linha de comando', () => {
     });
   });
 
-  test('JSON de labels inválido sai com código 1 e mensagem em stderr', () => {
-    const r = run('1.1.1', '[bug');
-    assert.equal(r.status, 1);
-    assert.notEqual(r.stderr.trim(), '');
+  for (const labels of ['[bug', '{"a":1}', '"bug"', '[1]', 'null', '["bug",2]']) {
+    test(`labels ${labels} saem com código 1, mensagem em stderr e nada em stdout`, () => {
+      const r = run('1.1.1', labels);
+      assert.equal(r.status, 1);
+      assert.notEqual(r.stderr.trim(), '');
+      assert.equal(r.stdout, '');
+    });
+  }
+
+  test('sem o segundo argumento, as labels são []', () => {
+    const r = run('1.1.1 1.2.0-beta.1');
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout), {
+      tag: '1.2.0-beta.2', version: '1.2.0', prerelease: true, bump: 'patch', previous: '1.1.1',
+    });
+  });
+
+  test('sem argumentos, tags e labels são []', () => {
+    const r = run();
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout), {
+      tag: '0.0.1-beta.1', version: '0.0.1', prerelease: true, bump: 'patch', previous: null,
+    });
+  });
+
+  test('labels de minor pela CLI', () => {
+    const r = run('1.1.1', '["improvement"]');
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout).tag, '1.2.0-beta.1');
   });
 });
