@@ -33,16 +33,33 @@ As labels são comparadas sem diferenciar maiúsculas de minúsculas (`Enhanceme
 | Label do pull request | Incremento |
 | --- | --- |
 | `upgrade` | major: `1.1.1` → `2.0.0` |
-| `enhancement` | minor: `1.1.1` → `1.2.0` |
-| `bug` | patch: `1.1.1` → `1.1.2` |
-| qualquer outra label (por exemplo `documentation`), ou nenhuma label | patch |
+| `enhancement`, `feature` ou `improvement` | minor: `1.1.1` → `1.2.0` |
+| `bug`, `refactor`, `deprecated`, `tests`, `dependencies`, `documentation` | patch: `1.1.1` → `1.1.2` |
+| qualquer outra label, ou nenhuma label | patch |
 
-- Se o PR tiver várias labels, vale o maior incremento: `upgrade` > `enhancement` > patch.
+- `enhancement`, `feature` e `improvement` são labels próprias do catálogo, e não aliases umas das outras.
+  As três dão minor. `improvement` → minor é provisório (a confirmar com o usuário).
+- Se o PR tiver várias labels, vale o maior incremento: major > minor > patch.
   Exemplo: `bug` + `enhancement` → minor, e `upgrade` + `bug` → major.
 - Todo merge gera uma versão, e não existe label que pule a release.
-- Não há aliases. `feature`, `major`, `minor`, `patch`, `breaking`, `improvement`, `dependencies` e outras labels
-  fora do catálogo são apagadas pela sincronização (ver [labels.md](labels.md)). Se ainda aparecerem num PR,
-  contam como patch, como qualquer label desconhecida, sem aviso nem tratamento especial.
+- `major`, `minor`, `patch` e `breaking` ficaram fora do catálogo e são apagadas pela sincronização
+  (ver [labels.md](labels.md)). Se ainda aparecerem num PR, contam como patch, como qualquer label desconhecida,
+  sem aviso nem tratamento especial.
+
+### Onde fica o mapeamento
+
+Para facilitar a troca de uma label de faixa (por exemplo, mover `improvement` para patch), o mapeamento fica numa
+única constante exportada por `scripts/release-version.cjs`:
+
+```js
+BUMP_LABELS = {
+  major: ['upgrade'],
+  minor: ['enhancement', 'feature', 'improvement'],
+};
+```
+
+Toda label que não está em `major` nem em `minor` vale patch, então as labels de patch não precisam ser listadas.
+Mudar a faixa de uma label é editar só essa constante (e a tabela acima).
 
 ## Estável ou pré-release
 
@@ -84,7 +101,10 @@ As versões são comparadas numericamente, componente a componente (`1.10.0` > `
 | `1.1.1`, `1.1.2-beta.2` | `enhancement` | `1.2.0-beta.1` |
 | `1.1.1`, `1.1.2-beta.2`, `1.2.0-beta.1` | `bug` | `1.2.0-beta.2` |
 | `1.1.1`, `1.2.0-beta.1` | `question` | `1.2.0-beta.2` |
-| `1.1.1` | `feature` | `1.1.2-beta.1` (sem alias: label desconhecida) |
+| `1.1.1` | `feature` | `1.2.0-beta.1` |
+| `1.1.1` | `improvement` | `1.2.0-beta.1` |
+| `1.1.1` | `refactor`, `tests`, `deprecated` | `1.1.2-beta.1` |
+| `1.1.1` | `dependencies`, `feature` | `1.2.0-beta.1` |
 | `1.1.1`, `1.2.0-beta.3` | `upgrade` | `2.0.0-beta.1` |
 | `1.1.1`, `1.2.0-beta.3` | `release` | `1.2.0` (promove a beta pendente) |
 | `1.1.1`, `1.2.0-beta.3` | `release`, `bug` | `1.2.0` |
@@ -113,16 +133,21 @@ As versões são comparadas numericamente, componente a componente (`1.10.0` > `
   - `parseTag('1.2.0-beta.3')` → `{ name: '1.2.0-beta.3', major: 1, minor: 2, patch: 0, beta: 3, legacy: false }`
   - `parseTag('v0.2.0')` → `{ name: 'v0.2.0', major: 0, minor: 2, patch: 0, beta: null, legacy: true }`
   - `parseTag('v1.0.0-rc.1')`, `parseTag('1.2.0-beta.0')` e `parseTag('01.2.0')` → `null`
-- `bumpFromLabels(labels: string[])`: devolve `'major' | 'minor' | 'patch'`.
-  - `bumpFromLabels(['bug', 'Enhancement'])` → `'minor'`; `bumpFromLabels([])` → `'patch'`;
-    `bumpFromLabels(['major'])` → `'patch'`.
+- `BUMP_LABELS`: o objeto `{ major: string[], minor: string[] }` descrito em
+  [Onde fica o mapeamento](#onde-fica-o-mapeamento), com os nomes em minúsculas.
+- `bumpFromLabels(labels: string[])`: devolve `'major' | 'minor' | 'patch'`, usando `BUMP_LABELS`.
+  - `bumpFromLabels(['bug', 'Enhancement'])` → `'minor'`; `bumpFromLabels(['improvement'])` → `'minor'`;
+    `bumpFromLabels([])` → `'patch'`; `bumpFromLabels(['major'])` → `'patch'`;
+    `bumpFromLabels(['dependencies'])` → `'patch'`.
 - `nextVersion({ tags: string[], labels: string[] })`: devolve
   `{ tag, version, prerelease, bump, previous }`.
   - `tag`: a nova tag (`'1.2.0-beta.2'`).
   - `version`: a base sem o sufixo (`'1.2.0'`).
   - `prerelease`: `true` quando a tag é beta.
   - `bump`: o incremento das labels.
-  - `previous`: o nome da maior estável usada como S, ou `null`.
+  - `previous`: o nome da maior estável usada como S, ou `null`. Quando a mesma versão existe nas duas formas
+    (`v1.2.0` e `1.2.0`), devolve o nome sem prefixo (`'1.2.0'`). Se só existir a legada, devolve a legada
+    (`'v1.2.0'`).
 
   Tags não reconhecidas são ignoradas sem erro. `labels` que não seja array de strings lança `TypeError`.
 
@@ -133,7 +158,12 @@ node scripts/release-version.cjs "<tags separadas por espaço ou quebra de linha
 ```
 
 Escreve em stdout uma única linha com o JSON de `nextVersion` e sai com código 0.
-Com JSON de labels inválido, escreve a mensagem em stderr e sai com código 1.
+Sai com código 1, com a mensagem em stderr e nada em stdout, quando o segundo argumento:
+
+- não é JSON válido (`'[bug'`);
+- é JSON válido, mas não é um array de strings (`'{"a":1}'`, `'"bug"'`, `'[1]'`, `'null'`).
+
+Sem o segundo argumento, as labels são `[]`. Sem o primeiro, as tags são `[]`.
 
 ```sh
 $ node scripts/release-version.cjs "1.1.1 1.2.0-beta.1" '["bug"]'
@@ -148,8 +178,9 @@ abaixo deixa de valer:
 | Antes | Agora |
 | --- | --- |
 | tags `v1.4.0` e `v1.4.0-rc.1` | `1.4.0` e `1.4.0-beta.1` |
-| `feature`, `dependencies`, `improvement` e `minor` → minor | só `enhancement` dá minor; as outras são apagadas dos repos (e, se aparecerem, valem patch) |
-| `breaking` e `major` → major | só `upgrade` dá major; as outras são apagadas dos repos (e, se aparecerem, valem patch) |
+| `dependencies` e `minor` → minor | `dependencies` → patch; `minor` é apagada dos repos (e, se aparecer, vale patch) |
+| `breaking` e `major` → major | só `upgrade` dá major; `breaking` e `major` são apagadas dos repos (e, se aparecerem, valem patch) |
+| labels locais fora do catálogo eram mantidas ou apagadas conforme o repo | todo repo fica só com as labels do catálogo |
 | a base da prévia era recalculada só com as labels do PR atual, então uma correção depois de uma prévia minor voltava para a linha patch (`v1.2.0-rc.1` seguida de `v1.1.2-rc.1`) | a base nunca anda para trás (`1.2.0-beta.1` seguida de `1.2.0-beta.2`) |
 | `release` ignorava as outras labels ao promover | `release` com `upgrade` sobre `1.2.0-beta.3` gera `2.0.0` |
 | a estável promovida apontava para o commit da prévia | a estável aponta para o merge do PR com `release` (ver [release.md](release.md)) |

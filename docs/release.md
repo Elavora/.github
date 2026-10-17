@@ -114,12 +114,17 @@ Lança `Error` com uma mensagem que contém `PACKAGIST_WEBHOOK_URL` quando:
 - o valor é `undefined`, vazio ou não é uma URL;
 - o protocolo não é `https` ou o host não é `packagist.org` (`http://packagist.org/...`, `https://example.com/...`);
 - o caminho não é `/api/update-package` (`https://packagist.org/api/github?...`);
-- falta `username` ou `apiToken`;
+- o host não é exatamente `packagist.org`: subdomínios como `evil.packagist.org` ou `www.packagist.org`, e hosts
+  como `packagist.org.evil.com`, são inválidos;
+- falta `username` ou `apiToken`, ou um deles está vazio (`username=&apiToken=b` e `username=a&apiToken=` contam
+  como ausentes);
 - a URL tem usuário/senha embutidos (`https://u:p@packagist.org/...`) ou fragmento (`#x`).
 
 ### `notifyPackagist({ repository, webhookUrl, fetchImpl = fetch, sleep })`
 
 - `repository` precisa casar com `^Elavora/api-[a-z0-9-]+$`. Senão, lança `Error` antes de qualquer requisição.
+- O secret é validado com `credentials` antes de qualquer requisição. Com secret inválido ou ausente, a função
+  rejeita com o mesmo `Error` de `credentials` (mensagem com `PACKAGIST_WEBHOOK_URL`) e `fetchImpl` nunca é chamado.
 - Envia `POST https://packagist.org/api/update-package` com:
   - header `Authorization: Bearer <username>:<apiToken>` e `Content-Type: application/json`;
   - corpo `{"repository":"https://github.com/<repository>"}`;

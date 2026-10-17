@@ -7,8 +7,9 @@ o que falta é criado, o que difere é corrigido e todo o resto é apagado.
 
 ## Catálogo
 
-As nove labels padrão do GitHub, com as cores padrão e descrições traduzidas, mais as duas exigidas pelo
-versionamento (`upgrade` e `release`):
+As nove labels padrão do GitHub, com as cores padrão e descrições traduzidas, mais as oito da Elavora
+(`upgrade`, `release`, `feature`, `improvement`, `refactor`, `tests`, `deprecated` e `dependencies`), num total
+de 17:
 
 | Label | Cor | Descrição | Efeito na versão |
 | --- | --- | --- | --- |
@@ -23,12 +24,19 @@ versionamento (`upgrade` e `release`):
 | `wontfix` | `ffffff` | Isto não será feito | patch |
 | `upgrade` | `5319e7` | Alteração incompatível; gera versão major | major |
 | `release` | `0052cc` | Gera versão estável em vez de pré-release | estabilidade |
+| `feature` | `0e8a16` | Nova funcionalidade compatível; gera versão minor | minor |
+| `improvement` | `84b6eb` | Melhoria compatível; gera versão minor | minor (provisório) |
+| `refactor` | `fbca04` | Refatoração sem mudança funcional | patch |
+| `tests` | `bfdadc` | Criação ou alteração de testes | patch |
+| `deprecated` | `e4e669` | Recurso obsoleto ou em processo de remoção | patch |
+| `dependencies` | `0366d6` | Atualização de dependências | patch |
 
-As regras completas de versão estão em [versionamento.md](versionamento.md). Não há aliases: o minor vem só de
-`enhancement` e o major só de `upgrade`.
+As regras completas de versão estão em [versionamento.md](versionamento.md). `enhancement`, `feature` e
+`improvement` são labels próprias (não aliases) e as três dão minor. `improvement` → minor ainda está para
+confirmar com o usuário; trocar a faixa é editar só `BUMP_LABELS` em `scripts/release-version.cjs`.
 
-Saíram do padrão, e por isso são apagadas onde existirem: `feature`, `dependencies`, `refactor`, `tests`,
-`deprecated`, `improvement`, `major`, `minor`, `patch` e `breaking`, além de qualquer outra label local.
+`major`, `minor`, `patch` e `breaking` não fazem parte do catálogo e são apagadas onde existirem, como qualquer
+outra label local.
 
 ### Formato de `.github/labels.json`
 
@@ -66,11 +74,12 @@ Para manter uma label, ela precisa entrar no catálogo.
 
 ### Armadilha: labels criadas por bots
 
-Bots que aplicam labels criam a label no repositório quando ela não existe. A sincronização seguinte apaga essa
-label, e o bot a recria no próximo PR. O caso mais comum é o **Dependabot**, que por padrão marca os PRs com
-`dependencies` e com o nome do ecossistema (`php`, `github_actions`, `docker`...).
+Bots que aplicam labels criam a label no repositório quando ela não existe. Se a label estiver fora do catálogo,
+a sincronização seguinte a apaga, e o bot a recria no próximo PR. O caso mais comum é o **Dependabot**, que por
+padrão marca os PRs com `dependencies` e com o nome do ecossistema (`php`, `github_actions`, `docker`...).
+`dependencies` está no catálogo e fica; as do ecossistema são apagadas.
 
-Essas labels **não entram no catálogo**. Há duas formas de lidar com elas:
+Labels de bots fora do catálogo **não entram nele**. Há duas formas de lidar com elas:
 
 1. **Mudar a configuração do bot.** No Dependabot, defina `labels` em cada `updates` do `.github/dependabot.yml`
    usando só labels do catálogo, por exemplo:
@@ -81,10 +90,10 @@ Essas labels **não entram no catálogo**. Há duas formas de lidar com elas:
        directory: /
        schedule:
          interval: weekly
-       labels: [bug]
+       labels: [dependencies]
    ```
 
-   Quando `labels` é definido, o Dependabot usa só essas labels e deixa de criar `dependencies` e a do ecossistema.
+   Quando `labels` é definido, o Dependabot usa só essas labels e deixa de criar a do ecossistema.
 2. **Aceitar a remoção.** A label continua sendo criada pelo bot e apagada toda semana. Isso não afeta a versão,
    porque uma label desconhecida vale patch, mas a label some dos PRs depois de cada sincronização.
 
@@ -109,9 +118,9 @@ Módulo CommonJS sem dependências externas.
   `planLabelSync` chama `validateCatalog` antes e propaga o erro de um catálogo inválido, sem devolver plano.
 
 Exemplo, com o catálogo desta página e o repositório contendo `Bug` (`d73a4a`), `enhancement` (`A2EEEF`, mesma
-descrição do catálogo), `dependencies`, `Major` e `IA`:
+descrição do catálogo), `php`, `Major` e `IA`:
 `Bug` vai para `update` (`current: 'Bug'`, `name: 'bug'`), `enhancement` vai para `unchanged`, `remove` fica
-`['dependencies', 'Major', 'IA']` e as outras 9 labels do catálogo vão para `create`.
+`['php', 'Major', 'IA']` e as outras 15 labels do catálogo vão para `create`.
 
 ## Workflow reutilizável `sync-labels.yml`
 

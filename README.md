@@ -19,10 +19,14 @@ Os scripts usam só módulos nativos do Node.js (20 ou mais novo), sem `npm inst
 são injetados). Eles rodam em container, sem instalar nada na máquina:
 
 ```sh
-docker run --rm -v "$PWD:/work:ro" -w /work node:22-alpine node --test tests/
+docker run --rm -v "$PWD:/work:ro" -w /work node:22-alpine node --test "tests/*.test.cjs"
 ```
+
+O padrão vai entre aspas para que o próprio Node expanda o glob. `node --test tests/` não funciona no Node 22
+(`Cannot find module '/work/tests'`).
 
 No PowerShell, use `${PWD}` no lugar de `$PWD`.
 
-O workflow `.github/workflows/test.yml` roda em todo PR e em push na `main`. Ele executa os testes acima e o
+O workflow `.github/workflows/test.yml` roda em todo PR e em push na `main`. Ele executa os testes com o mesmo
+comando (`node --test "tests/*.test.cjs"`) e o
 `actionlint` (`rhysd/actionlint`, em container) sobre os workflows de `.github/workflows/`.
