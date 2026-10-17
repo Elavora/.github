@@ -324,3 +324,105 @@ test.describe('linha de comando', () => {
     assert.equal(JSON.parse(r.stdout).tag, '1.2.0-beta.1');
   });
 });
+
+test.describe('aggregateLabels', () => {
+  const { aggregateLabels } = require(SCRIPT);
+
+  test('exemplo da documentação: união sem diferenciar caixa, grafia da primeira ocorrência', () => {
+    assert.equal(typeof aggregateLabels, 'function');
+    assert.deepEqual(
+      aggregateLabels([
+        { number: 10, labels: ['bug'] },
+        { number: 11, labels: ['upgrade'] },
+        { number: 12, labels: ['Bug', 'release'] },
+      ]),
+      ['bug', 'upgrade', 'release'],
+    );
+  });
+
+  test('a primeira grafia vence, na ordem dos PRs e das labels', () => {
+    assert.deepEqual(
+      aggregateLabels([
+        { number: 1, labels: ['Enhancement', 'bug', 'BUG'] },
+        { number: 2, labels: ['enhancement', 'Release'] },
+        { number: 3, labels: ['release', 'documentation'] },
+      ]),
+      ['Enhancement', 'bug', 'Release', 'documentation'],
+    );
+  });
+
+  test('PR sem labels e lista vazia', () => {
+    assert.equal(typeof aggregateLabels, 'function');
+    assert.deepEqual(aggregateLabels([{ number: 1, labels: [] }]), []);
+    assert.deepEqual(aggregateLabels([]), []);
+  });
+
+  test('um PR só devolve as labels dele', () => {
+    assert.deepEqual(aggregateLabels([{ number: 7, labels: ['feature', 'tests'] }]), ['feature', 'tests']);
+  });
+
+  for (const [nome, pulls] of [
+    ['pulls null', null],
+    ['pulls undefined', undefined],
+    ['pulls objeto', { number: 1, labels: ['bug'] }],
+    ['pulls string', 'bug'],
+    ['PR sem labels', [{ number: 1 }]],
+    ['labels string', [{ number: 1, labels: 'bug' }]],
+    ['labels null', [{ number: 1, labels: null }]],
+    ['label não string', [{ number: 1, labels: [1] }]],
+    ['label null no meio', [{ number: 1, labels: ['bug', null] }]],
+    ['segundo PR inválido', [{ number: 1, labels: ['bug'] }, { number: 2, labels: {} }]],
+  ]) {
+    test(`entrada inválida (${nome}) lança TypeError`, () => {
+      assert.equal(typeof aggregateLabels, 'function');
+      assert.throws(() => aggregateLabels(pulls), TypeError);
+    });
+  }
+
+  test('integração: resultado do exemplo da doc em nextVersion gera 2.0.0', () => {
+    const labels = aggregateLabels([
+      { number: 10, labels: ['bug'] },
+      { number: 11, labels: ['upgrade'] },
+      { number: 12, labels: ['Bug', 'release'] },
+    ]);
+    const r = nextVersion({ tags: ['1.1.1'], labels });
+    assert.equal(r.tag, '2.0.0');
+    assert.equal(r.prerelease, false);
+    assert.equal(r.bump, 'major');
+  });
+
+  test('integração: #10 já com tag, #11 cancelado e #12 → 2.0.0-beta.1 (release.md)', () => {
+    const labels = aggregateLabels([
+      { number: 11, labels: ['upgrade'] },
+      { number: 12, labels: ['documentation'] },
+    ]);
+    assert.deepEqual(nextVersion({ tags: ['1.1.1', '1.1.2-beta.1'], labels }), {
+      tag: '2.0.0-beta.1', version: '2.0.0', prerelease: true, bump: 'major', previous: '1.1.1',
+    });
+  });
+
+  test('a ordem dos PRs não altera nextVersion', () => {
+    const pulls = [
+      { number: 10, labels: ['bug'] },
+      { number: 11, labels: ['upgrade'] },
+      { number: 12, labels: ['Bug', 'release'] },
+    ];
+    const permutacoes = [
+      [0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0],
+    ];
+    for (const p of permutacoes) {
+      const r = nextVersion({ tags: ['1.1.1'], labels: aggregateLabels(p.map((i) => pulls[i])) });
+      assert.equal(r.tag, '2.0.0', `ordem ${p}`);
+    }
+  });
+
+  test('release em qualquer PR gera estável; a maior label vale', () => {
+    const labels = aggregateLabels([
+      { number: 1, labels: ['release'] },
+      { number: 2, labels: ['feature'] },
+      { number: 3, labels: ['bug'] },
+    ]);
+    const r = nextVersion({ tags: ['1.1.1'], labels });
+    assert.equal(r.tag, '1.2.0');
+  });
+});
