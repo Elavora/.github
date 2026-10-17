@@ -33,16 +33,16 @@ As labels são comparadas sem diferenciar maiúsculas de minúsculas (`Enhanceme
 | Label do pull request | Incremento |
 | --- | --- |
 | `upgrade` | major: `1.1.1` → `2.0.0` |
-| `enhancement` ou `feature` (alias) | minor: `1.1.1` → `1.2.0` |
+| `enhancement` | minor: `1.1.1` → `1.2.0` |
 | `bug` | patch: `1.1.1` → `1.1.2` |
-| qualquer outra label, inclusive `documentation`, `tests`, `refactor` e `dependencies`, ou nenhuma label | patch |
+| qualquer outra label (por exemplo `documentation`), ou nenhuma label | patch |
 
-- Se o PR tiver várias labels, vale o maior incremento: `upgrade` > `enhancement`/`feature` > patch.
+- Se o PR tiver várias labels, vale o maior incremento: `upgrade` > `enhancement` > patch.
   Exemplo: `bug` + `enhancement` → minor, e `upgrade` + `bug` → major.
 - Todo merge gera uma versão, e não existe label que pule a release.
-- `major`, `minor`, `patch`, `breaking` e `improvement` (aliases antigos) são removidas dos repositórios pela
-  sincronização de labels (ver [labels.md](labels.md)). Se ainda aparecerem num PR, contam como patch, como qualquer
-  label desconhecida, sem aviso nem tratamento especial.
+- Não há aliases. `feature`, `major`, `minor`, `patch`, `breaking`, `improvement`, `dependencies` e outras labels
+  fora do catálogo são apagadas pela sincronização (ver [labels.md](labels.md)). Se ainda aparecerem num PR,
+  contam como patch, como qualquer label desconhecida, sem aviso nem tratamento especial.
 
 ## Estável ou pré-release
 
@@ -83,7 +83,8 @@ As versões são comparadas numericamente, componente a componente (`1.10.0` > `
 | `1.1.1`, `1.1.2-beta.1` | `bug` | `1.1.2-beta.2` |
 | `1.1.1`, `1.1.2-beta.2` | `enhancement` | `1.2.0-beta.1` |
 | `1.1.1`, `1.1.2-beta.2`, `1.2.0-beta.1` | `bug` | `1.2.0-beta.2` |
-| `1.1.1`, `1.2.0-beta.1` | `feature` | `1.2.0-beta.2` |
+| `1.1.1`, `1.2.0-beta.1` | `question` | `1.2.0-beta.2` |
+| `1.1.1` | `feature` | `1.1.2-beta.1` (sem alias: label desconhecida) |
 | `1.1.1`, `1.2.0-beta.3` | `upgrade` | `2.0.0-beta.1` |
 | `1.1.1`, `1.2.0-beta.3` | `release` | `1.2.0` (promove a beta pendente) |
 | `1.1.1`, `1.2.0-beta.3` | `release`, `bug` | `1.2.0` |
@@ -147,8 +148,8 @@ abaixo deixa de valer:
 | Antes | Agora |
 | --- | --- |
 | tags `v1.4.0` e `v1.4.0-rc.1` | `1.4.0` e `1.4.0-beta.1` |
-| `dependencies`, `improvement` e `minor` → minor | `dependencies` → patch; `improvement` e `minor` são removidas dos repos (e, se aparecerem, valem patch) |
-| `breaking` e `major` → major | removidas dos repos (e, se aparecerem, valem patch) |
+| `feature`, `dependencies`, `improvement` e `minor` → minor | só `enhancement` dá minor; as outras são apagadas dos repos (e, se aparecerem, valem patch) |
+| `breaking` e `major` → major | só `upgrade` dá major; as outras são apagadas dos repos (e, se aparecerem, valem patch) |
 | a base da prévia era recalculada só com as labels do PR atual, então uma correção depois de uma prévia minor voltava para a linha patch (`v1.2.0-rc.1` seguida de `v1.1.2-rc.1`) | a base nunca anda para trás (`1.2.0-beta.1` seguida de `1.2.0-beta.2`) |
 | `release` ignorava as outras labels ao promover | `release` com `upgrade` sobre `1.2.0-beta.3` gera `2.0.0` |
 | a estável promovida apontava para o commit da prévia | a estável aponta para o merge do PR com `release` (ver [release.md](release.md)) |
