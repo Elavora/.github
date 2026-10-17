@@ -74,17 +74,17 @@ function notConcluded(result) {
   return { status: 'error', detail: `etapa não concluída (${result})` };
 }
 
-function installStage(install, dependencies) {
-  if (install === 'success') {
-    return {
-      status: 'ok',
-      detail: dependencies === 'install' ? 'dependências instaladas' : 'dependências mínimas instaladas (--prefer-lowest)',
-    };
-  }
+function installStage(install, dependencies, lowest) {
   if (install === 'failure' || install === 'skipped') {
     return { status: 'error', detail: 'a instalação das dependências falhou; veja o log' };
   }
-  return notConcluded(install);
+  if (install !== 'success') return notConcluded(install);
+  if (dependencies === 'install') return { status: 'ok', detail: 'dependências instaladas' };
+  if (lowest === 'success') return { status: 'ok', detail: 'dependências mínimas instaladas (--prefer-lowest)' };
+  if (lowest === 'failure' || lowest === 'skipped') {
+    return { status: 'error', detail: 'a instalação das dependências mínimas falhou; veja o log' };
+  }
+  return notConcluded(lowest);
 }
 
 function auditStage(installed, outcome) {
@@ -94,8 +94,18 @@ function auditStage(installed, outcome) {
   return notConcluded(outcome);
 }
 
-function formatStage({ mode, reason, config, exitCode, changedFiles, push } = {}) {
-  const count = (changedFiles ?? []).length;
+// changedFiles seguidos dos syncFiles que ainda não estão neles.
+function formatFiles(format) {
+  const files = [];
+  for (const file of [...((format && format.changedFiles) ?? []), ...((format && format.syncFiles) ?? [])]) {
+    if (!files.includes(file)) files.push(file);
+  }
+  return files;
+}
+
+function formatStage(installOk, { mode, reason, config, exitCode, push } = {}, files) {
+  if (!installOk) return { status: 'skipped', detail: NOT_INSTALLED };
+  const count = files.length;
   let result;
   if (exitCode !== 0) {
     result = { status: 'error', detail: `o PHP-CS-Fixer falhou (código ${exitCode}); veja o log` };
@@ -151,17 +161,19 @@ function coverageStage(testStatus, { min, percent }) {
 }
 
 function buildStages(input) {
-  const { install, dependencies = 'lowest', audit, format, editorconfig, lint, analyse, test, coverage } = input;
+  const { install, dependencies = 'lowest', lowest, audit, format, editorconfig, lint, analyse, test, coverage } = input;
   const scripts = Array.isArray(input.scripts) ? input.scripts : [];
-  const installed = install === 'success';
+  // "Instalação concluída": o composer install e, com dependencies lowest, também o composer update --prefer-lowest.
+  const installed = install === 'success' && (dependencies !== 'lowest' || lowest === 'success');
   const stages = [];
   const add = (id, name, result, extra = {}) => stages.push({ id, name, ...result, ...extra });
 
-  add('install', 'Dependências (Composer)', installStage(install, dependencies));
+  add('install', 'Dependências (Composer)', installStage(install, dependencies, lowest));
   if (audit && audit.enabled === true) {
     add('audit', 'Auditoria (composer audit)', auditStage(installed, audit.outcome));
   }
-  add('format', 'Formatação (PHP-CS-Fixer)', formatStage(format), { files: [...((format && format.changedFiles) ?? [])] });
+  const files = formatFiles(format);
+  add('format', 'Formatação (PHP-CS-Fixer)', formatStage(install === 'success', format, files), { files });
   add('editorconfig', 'EditorConfig', editorconfigStage(editorconfig));
   add('lint', 'Lint (composer lint)', scriptStage(installed, scripts, 'lint', lint));
   add('analyse', 'PHPStan (composer analyse)', scriptStage(installed, scripts, 'analyse', analyse));
