@@ -285,14 +285,14 @@ test.describe('php-quality.yml: passos', () => {
     assert.doesNotMatch(body(), /commit\s+(-a|--all)\b/);
   });
 
-  test('ordem dos passos: install, format, commit, editorconfig, lowest, audit, lint, analyse, test, relatório, resultado', () => {
+  test('ordem dos passos: formatMode, install, format, commit, editorconfig, lowest, audit, lint, analyse, test, relatório, resultado', () => {
     // só dentro de jobs:, para não casar descrições das entradas
     const jobs = block(readWorkflow(), 'jobs');
     assert.ok(jobs, 'jobs ausente');
     const t = jobs.join('\n');
     const marcos = [
-      ['composer install', /composer install --no-progress --prefer-dist/],
       ['formatMode', /formatMode/],
+      ['composer install', /composer install --no-progress --prefer-dist/],
       ['php-cs-fixer fix', /php-cs-fixer fix/],
       ['push do commit', /core\.hooksPath=\/dev\/null/],
       ['editorconfig-checker', /xargs -0 editorconfig-checker/],
