@@ -1,0 +1,19 @@
+[
+  { "name": "bug", "color": "d73a4a", "description": "Algo não está funcionando" },
+  { "name": "documentation", "color": "0075ca", "description": "Melhorias ou acréscimos à documentação" },
+  { "name": "duplicate", "color": "cfd3d7", "description": "Esta issue ou pull request já existe" },
+  { "name": "enhancement", "color": "a2eeef", "description": "Nova funcionalidade ou pedido" },
+  { "name": "good first issue", "color": "7057ff", "description": "Boa para quem está começando" },
+  { "name": "help wanted", "color": "008672", "description": "Precisa de atenção extra" },
+  { "name": "invalid", "color": "e4e669", "description": "Isto não parece certo" },
+  { "name": "question", "color": "d876e3", "description": "Mais informações são necessárias" },
+  { "name": "wontfix", "color": "ffffff", "description": "Isto não será feito" },
+  { "name": "upgrade", "color": "5319e7", "description": "Alteração incompatível; gera versão major" },
+  { "name": "release", "color": "0052cc", "description": "Gera versão estável em vez de pré-release" },
+  { "name": "feature", "color": "0e8a16", "description": "Nova funcionalidade compatível; gera versão minor" },
+  { "name": "improvement", "color": "84b6eb", "description": "Melhoria compatível; gera versão minor" },
+  { "name": "refactor", "color": "fbca04", "description": "Refatoração sem mudança funcional" },
+  { "name": "tests", "color": "bfdadc", "description": "Criação ou alteração de testes" },
+  { "name": "deprecated", "color": "e4e669", "description": "Recurso obsoleto ou em processo de remoção" },
+  { "name": "dependencies", "color": "0366d6", "description": "Atualização de dependências" }
+]

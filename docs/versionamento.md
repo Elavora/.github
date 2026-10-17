@@ -1,0 +1,207 @@
+# Regras de versão
+
+Toda vez que um pull request é integrado na `main` de um repositório Elavora, o workflow central de release
+(ver [release.md](release.md)) cria uma tag e uma GitHub Release. A versão é calculada só a partir de duas
+entradas: as tags que já existem no repositório e as **labels agregadas** de todos os pull requests integrados na
+`main` desde a última tag, incluindo o do merge atual.
+
+Normalmente só existe um PR nesse intervalo, o do merge atual. Mais de um aparece quando a execução de um merge
+anterior foi cancelada pela fila de concorrência do GitHub (ver [release.md](release.md#concorrência)). Nesse
+caso, a versão nova absorve os PRs que ficaram sem tag:
+
+- vale a maior label entre todos os PRs do intervalo (um `upgrade` em qualquer um deles gera major);
+- `release` em qualquer um deles gera estável.
+
+O workflow levanta os PRs e passa as labels já agregadas para o cálculo, que é uma função pura. Nas regras abaixo,
+"labels do PR" significa essas labels agregadas.
+
+Esta página é a especificação do cálculo, implementado em `scripts/release-version.cjs`.
+
+## Formato das tags
+
+- Versão estável: `X.Y.Z`, por exemplo `1.2.0`.
+- Pré-release: `X.Y.Z-beta.N`, com `N >= 1`, por exemplo `1.2.0-beta.3`.
+- Sem o prefixo `v`. O Composer e o Packagist entendem as duas formas, e a organização padronizou sem prefixo.
+- Componentes numéricos em decimal, sem zero à esquerda (`0` é válido, `01` não é).
+
+### Tags reconhecidas na leitura
+
+| Tag existente | Como é tratada |
+| --- | --- |
+| `1.2.0` | estável `1.2.0` |
+| `1.2.0-beta.3` | pré-release `1.2.0`, número 3 |
+| `v1.2.0` (legada) | estável `1.2.0`. Conta como histórico para que os repos que já têm tags `v*` não voltem para `0.0.1` |
+| `v1.2.0-rc.1` (legada) | ignorada |
+| `1.2.0-rc.1`, `1.2.0-beta`, `1.2.0-beta.0`, `1.2`, `01.2.0`, `0.17.1-32`, `latest` | ignoradas |
+
+Uma estável legada e uma nova com o mesmo número (`v1.2.0` e `1.2.0`) representam a mesma versão.
+O workflow nunca cria tags com `v`, nem apaga ou move tags existentes.
+
+## Incremento pelas labels
+
+As labels são comparadas sem diferenciar maiúsculas de minúsculas (`Enhancement` equivale a `enhancement`).
+
+| Label do pull request | Incremento |
+| --- | --- |
+| `upgrade` | major: `1.1.1` → `2.0.0` |
+| `enhancement`, `feature` ou `improvement` | minor: `1.1.1` → `1.2.0` |
+| `bug`, `refactor`, `deprecated`, `tests`, `dependencies`, `documentation` | patch: `1.1.1` → `1.1.2` |
+| qualquer outra label, ou nenhuma label | patch |
+
+- `enhancement`, `feature` e `improvement` são labels próprias do catálogo, e não aliases umas das outras.
+  As três dão minor.
+- Se o PR tiver várias labels, vale o maior incremento: major > minor > patch.
+  Exemplo: `bug` + `enhancement` → minor, e `upgrade` + `bug` → major.
+- Todo merge gera uma versão, e não existe label que pule a release.
+- `major`, `minor`, `patch` e `breaking` ficaram fora do catálogo e são apagadas pela sincronização
+  (ver [labels.md](labels.md)). Se ainda aparecerem num PR, contam como patch, como qualquer label desconhecida,
+  sem aviso nem tratamento especial.
+
+### Onde fica o mapeamento
+
+Para facilitar a troca de uma label de faixa (por exemplo, mover `improvement` para patch), o mapeamento fica numa
+única constante exportada por `scripts/release-version.cjs`:
+
+```js
+BUMP_LABELS = {
+  major: ['upgrade'],
+  minor: ['enhancement', 'feature', 'improvement'],
+};
+```
+
+Toda label que não está em `major` nem em `minor` vale patch, então as labels de patch não precisam ser listadas.
+Mudar a faixa de uma label é editar só essa constante (e a tabela acima).
+
+## Estável ou pré-release
+
+- Com a label `release`, sai uma versão estável `X.Y.Z`.
+- Sem ela, sai uma pré-release `X.Y.Z-beta.N`.
+- `release` só define a estabilidade, não o incremento. As outras labels do mesmo PR continuam valendo.
+
+## Algoritmo
+
+Definições, considerando só as tags reconhecidas:
+
+- **S**: a maior estável existente, ou `0.0.0` se não houver nenhuma.
+- **Pendentes**: as pré-releases cuja base `X.Y.Z` é maior que S. Uma beta cuja base é menor ou igual a S já foi
+  superada e é ignorada.
+- **P**: a maior base entre as pendentes, se houver alguma.
+
+Passos:
+
+1. `C` = S com o incremento das labels aplicado. Um major zera minor e patch, e um minor zera patch.
+2. Base `B` = a maior entre `C` e `P`. Sem pendentes, `B = C`.
+   Assim, a linha de betas nunca anda para trás: uma correção feita depois de uma beta minor continua na mesma base.
+3. Com `release`, a tag é `B`.
+4. Sem `release`, a tag é `B-beta.N`, onde `N` = 1 + o maior número de beta já existente com a base `B`
+   (ou 1, se não houver nenhuma). Quando a base muda, `N` recomeça em 1.
+
+As versões são comparadas numericamente, componente a componente (`1.10.0` > `1.9.0`).
+
+## Exemplos
+
+| Tags existentes | Labels do PR | Nova tag |
+| --- | --- | --- |
+| nenhuma | nenhuma | `0.0.1-beta.1` |
+| nenhuma | `release` | `0.0.1` |
+| nenhuma | `upgrade`, `release` | `1.0.0` |
+| `1.1.1` | `bug` | `1.1.2-beta.1` |
+| `1.1.1` | `documentation` | `1.1.2-beta.1` |
+| `1.1.1` | `dependencies` | `1.1.2-beta.1` |
+| `1.1.1`, `1.1.2-beta.1` | `bug` | `1.1.2-beta.2` |
+| `1.1.1`, `1.1.2-beta.2` | `enhancement` | `1.2.0-beta.1` |
+| `1.1.1`, `1.1.2-beta.2`, `1.2.0-beta.1` | `bug` | `1.2.0-beta.2` |
+| `1.1.1`, `1.2.0-beta.1` | `question` | `1.2.0-beta.2` |
+| `1.1.1` | `feature` | `1.2.0-beta.1` |
+| `1.1.1` | `improvement` | `1.2.0-beta.1` |
+| `1.1.1` | `refactor`, `tests`, `deprecated` | `1.1.2-beta.1` |
+| `1.1.1` | `dependencies`, `feature` | `1.2.0-beta.1` |
+| `1.1.1`, `1.2.0-beta.3` | `upgrade` | `2.0.0-beta.1` |
+| `1.1.1`, `1.2.0-beta.3` | `release` | `1.2.0` (promove a beta pendente) |
+| `1.1.1`, `1.2.0-beta.3` | `release`, `bug` | `1.2.0` |
+| `1.1.1`, `1.2.0-beta.3` | `release`, `upgrade` | `2.0.0` |
+| `1.1.1` | `release`, `enhancement` | `1.2.0` |
+| `1.1.1` | `bug`, `enhancement`, `upgrade` | `2.0.0-beta.1` |
+| `1.2.0`, `1.2.0-beta.3` | `bug` | `1.2.1-beta.1` (a beta 1.2.0 já foi superada) |
+| `1.9.0`, `1.10.0` | `bug` | `1.10.1-beta.1` |
+| `1.1.1` | `Enhancement` | `1.2.0-beta.1` |
+| `1.1.1` | `major` | `1.1.2-beta.1` (label desconhecida) |
+| `1.1.1` | `breaking`, `release` | `1.1.2` |
+| `v0.1.0`, `v0.1.1`, `v0.2.0` | `bug` | `0.2.1-beta.1` |
+| `v0.2.0`, `0.2.1-beta.1` | `release` | `0.2.1` |
+| `v1.0.0`, `v1.1.0-rc.1`, `v2.0.0-rc.1` | `upgrade` | `2.0.0-beta.1` (as `rc` legadas são ignoradas) |
+| `0.17.1-32`, `latest` | nenhuma | `0.0.1-beta.1` |
+
+## Interface do script
+
+`scripts/release-version.cjs` é um módulo CommonJS sem dependências externas que roda no Node.js 20 ou mais novo.
+
+### Funções exportadas
+
+- `parseTag(name: string)`: devolve `{ name, major, minor, patch, beta, legacy }` ou `null` quando a tag não é
+  reconhecida (conforme a tabela de leitura). `beta` é o número `N`, ou `null` para estável.
+  `legacy` é `true` para `vX.Y.Z`.
+  - `parseTag('1.2.0-beta.3')` → `{ name: '1.2.0-beta.3', major: 1, minor: 2, patch: 0, beta: 3, legacy: false }`
+  - `parseTag('v0.2.0')` → `{ name: 'v0.2.0', major: 0, minor: 2, patch: 0, beta: null, legacy: true }`
+  - `parseTag('v1.0.0-rc.1')`, `parseTag('1.2.0-beta.0')` e `parseTag('01.2.0')` → `null`
+- `aggregateLabels(pulls: { number: number, labels: string[] }[])`: devolve a união das labels de todos os PRs, sem
+  repetir nomes iguais sem diferenciar maiúsculas de minúsculas (fica a grafia da primeira ocorrência, na ordem dos
+  PRs e das labels). A ordem dos PRs não altera o resultado de `nextVersion`.
+  - `aggregateLabels([{ number: 10, labels: ['bug'] }, { number: 11, labels: ['upgrade'] }, { number: 12, labels: ['Bug', 'release'] }])`
+    → `['bug', 'upgrade', 'release']`
+  - `aggregateLabels([{ number: 1, labels: [] }])` → `[]`; `aggregateLabels([])` → `[]`
+  - `pulls` que não seja array, ou PR sem `labels` como array de strings, lança `TypeError`.
+  - Com o resultado, `nextVersion({ tags: ['1.1.1'], labels })` gera `2.0.0`: major por causa do #11 e estável por
+    causa do #12.
+- `BUMP_LABELS`: o objeto `{ major: string[], minor: string[] }` descrito em
+  [Onde fica o mapeamento](#onde-fica-o-mapeamento), com os nomes em minúsculas.
+- `bumpFromLabels(labels: string[])`: devolve `'major' | 'minor' | 'patch'`, usando `BUMP_LABELS`.
+  - `bumpFromLabels(['bug', 'Enhancement'])` → `'minor'`; `bumpFromLabels(['improvement'])` → `'minor'`;
+    `bumpFromLabels([])` → `'patch'`; `bumpFromLabels(['major'])` → `'patch'`;
+    `bumpFromLabels(['dependencies'])` → `'patch'`.
+- `nextVersion({ tags: string[], labels: string[] })`: devolve
+  `{ tag, version, prerelease, bump, previous }`.
+  - `tag`: a nova tag (`'1.2.0-beta.2'`).
+  - `version`: a base sem o sufixo (`'1.2.0'`).
+  - `prerelease`: `true` quando a tag é beta.
+  - `bump`: o incremento das labels.
+  - `previous`: o nome da maior estável usada como S, ou `null`. Quando a mesma versão existe nas duas formas
+    (`v1.2.0` e `1.2.0`), devolve o nome sem prefixo (`'1.2.0'`). Se só existir a legada, devolve a legada
+    (`'v1.2.0'`).
+
+  Tags não reconhecidas são ignoradas sem erro. `labels` que não seja array de strings lança `TypeError`.
+
+### Linha de comando
+
+```sh
+node scripts/release-version.cjs "<tags separadas por espaço ou quebra de linha>" '<labels em JSON>'
+```
+
+Escreve em stdout uma única linha com o JSON de `nextVersion` e sai com código 0.
+Sai com código 1, com a mensagem em stderr e nada em stdout, quando o segundo argumento:
+
+- não é JSON válido (`'[bug'`);
+- é JSON válido, mas não é um array de strings (`'{"a":1}'`, `'"bug"'`, `'[1]'`, `'null'`).
+
+Sem o segundo argumento, as labels são `[]`. Sem o primeiro, as tags são `[]`.
+
+```sh
+$ node scripts/release-version.cjs "1.1.1 1.2.0-beta.1" '["bug"]'
+{"tag":"1.2.0-beta.2","version":"1.2.0","prerelease":true,"bump":"patch","previous":"1.1.1"}
+```
+
+## Diferenças em relação ao fluxo anterior
+
+O fluxo anterior (`release-version.cjs` até a versão integrada no PR #34) fazia outra coisa, e o comportamento
+abaixo deixa de valer:
+
+| Antes | Agora |
+| --- | --- |
+| tags `v1.4.0` e `v1.4.0-rc.1` | `1.4.0` e `1.4.0-beta.1` |
+| `dependencies` e `minor` → minor | `dependencies` → patch; `minor` é apagada dos repos (e, se aparecer, vale patch) |
+| `breaking` e `major` → major | só `upgrade` dá major; `breaking` e `major` são apagadas dos repos (e, se aparecerem, valem patch) |
+| labels locais fora do catálogo eram mantidas ou apagadas conforme o repo | todo repo fica só com as labels do catálogo |
+| a base da prévia era recalculada só com as labels do PR atual, então uma correção depois de uma prévia minor voltava para a linha patch (`v1.2.0-rc.1` seguida de `v1.1.2-rc.1`) | a base nunca anda para trás (`1.2.0-beta.1` seguida de `1.2.0-beta.2`) |
+| `release` ignorava as outras labels ao promover | `release` com `upgrade` sobre `1.2.0-beta.3` gera `2.0.0` |
+| a versão usava só as labels do PR do evento; com uma execução cancelada na fila, as labels daquele PR se perdiam | a versão usa as labels agregadas de todos os PRs desde a última tag |
+| a estável promovida apontava para o commit da prévia | a estável aponta para o merge do PR com `release` (ver [release.md](release.md)) |

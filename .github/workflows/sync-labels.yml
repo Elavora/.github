@@ -1,0 +1,100 @@
+name: Sincronizar labels reutilizável
+
+# Especificação: docs/labels.md. O repositório fica com exatamente as labels do catálogo (prune total).
+
+on:
+  workflow_call:
+    inputs:
+      automation_ref:
+        description: Versão do Elavora/.github (tag estável ou SHA completo), a mesma do uses.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sincronizar labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Validar automation_ref
+        env:
+          AUTOMATION_REF: ${{ inputs.automation_ref }}
+        run: |
+          if [[ -z "${AUTOMATION_REF// /}" ]]; then
+            echo "::error::automation_ref é obrigatório (tag estável ou SHA completo do Elavora/.github)."
+            exit 1
+          fi
+
+      - name: Checkout do catálogo e dos scripts do Elavora/.github
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Elavora/.github
+          ref: ${{ inputs.automation_ref }}
+          path: .elavora
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/labels.json
+            /scripts/
+
+      - name: Aplicar o catálogo
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const base = `${process.env.GITHUB_WORKSPACE}/.elavora`;
+            const { validateCatalog, planLabelSync } = require(`${base}/scripts/sync-labels.cjs`);
+
+            // Valida antes de qualquer chamada à API: um catálogo quebrado não pode apagar labels.
+            let catalog;
+            try {
+              catalog = JSON.parse(fs.readFileSync(`${base}/.github/labels.json`, 'utf8'));
+              validateCatalog(catalog);
+            } catch (error) {
+              core.setFailed(`Catálogo de labels inválido, nada foi alterado: ${error.message}`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const existing = await github.paginate(github.rest.issues.listLabelsForRepo, {
+              owner, repo, per_page: 100,
+            });
+            const plan = planLabelSync(
+              catalog,
+              existing.map(({ name, color, description }) => ({ name, color, description })),
+            );
+
+            for (const { name, color, description } of plan.create) {
+              await github.rest.issues.createLabel({ owner, repo, name, color, description });
+            }
+            for (const { current, name, color, description } of plan.update) {
+              await github.rest.issues.updateLabel({
+                owner, repo, name: current, new_name: name, color, description,
+              });
+            }
+            for (const name of plan.remove) {
+              try {
+                await github.rest.issues.deleteLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                core.info(`Label ${name} já não existia.`);
+              }
+            }
+
+            const list = (names) => (names.length ? names.map((n) => `\`${n}\``).join(', ') : '-');
+            await core.summary
+              .addHeading('Sincronização de labels', 2)
+              .addTable([
+                [{ data: 'Ação', header: true }, { data: 'Quantidade', header: true }, { data: 'Labels', header: true }],
+                ['Criadas', String(plan.create.length), list(plan.create.map((l) => l.name))],
+                ['Atualizadas', String(plan.update.length), list(plan.update.map((l) => l.current === l.name ? l.name : `${l.current} → ${l.name}`))],
+                ['Removidas', String(plan.remove.length), list(plan.remove)],
+                ['Inalteradas', String(plan.unchanged.length), ''],
+              ])
+              .write();
