@@ -315,6 +315,7 @@ function baseInput(overrides = {}) {
   return {
     install: 'success',
     dependencies: 'lowest',
+    lowest: 'success',
     audit: { enabled: true, outcome: 'success' },
     format: { mode: 'commit', reason: null, config: 'dist', exitCode: 0, changedFiles: [], push: 'skipped' },
     editorconfig: { present: true, outcome: 'success' },
@@ -435,6 +436,51 @@ test.describe('buildStages: install', () => {
   test('cancelled → etapa não concluída', () => {
     assert.deepEqual(sd(baseInput({ install: 'cancelled' }), 'install'), { status: 'error', detail: 'etapa não concluída (cancelled)' });
   });
+
+  test('lowest failure ou skipped → error das dependências mínimas', () => {
+    for (const lowest of ['failure', 'skipped']) {
+      assert.deepEqual(sd(baseInput({ lowest }), 'install'), {
+        status: 'error', detail: 'a instalação das dependências mínimas falhou; veja o log',
+      }, lowest);
+    }
+  });
+
+  test('lowest cancelled → error', () => {
+    assert.equal(stage(baseInput({ lowest: 'cancelled' }), 'install').status, 'error');
+  });
+
+  test('install falhou: vale o erro do install, não o do lowest', () => {
+    assert.deepEqual(sd(baseInput({ install: 'failure', lowest: 'skipped' }), 'install'), {
+      status: 'error', detail: 'a instalação das dependências falhou; veja o log',
+    });
+  });
+
+  test('lowest só conta com dependencies lowest', () => {
+    for (const lowest of ['skipped', 'failure', undefined]) {
+      const input = baseInput({ dependencies: 'install', lowest });
+      assert.deepEqual(sd(input, 'install'), { status: 'ok', detail: 'dependências instaladas' }, String(lowest));
+      assert.deepEqual(sd(input, 'lint'), { status: 'ok', detail: 'sem problemas' }, String(lowest));
+      assert.deepEqual(sd(input, 'test'), { status: 'ok', detail: 'testes passaram' }, String(lowest));
+    }
+  });
+});
+
+test.describe('buildStages: instalação concluída inclui o lowest', () => {
+  for (const lowest of ['failure', 'skipped', 'cancelled']) {
+    test(`lowest ${lowest}: audit, lint, analyse e test ficam skipped`, () => {
+      const input = baseInput({ lowest, audit: { enabled: true, outcome: 'skipped' }, lint: 'skipped', analyse: 'skipped', test: 'skipped' });
+      for (const id of ['audit', 'lint', 'analyse', 'test']) {
+        assert.deepEqual(sd(input, id), { status: 'skipped', detail: 'dependências não instaladas' }, id);
+      }
+      assert.deepEqual(sd(input, 'coverage'), { status: 'skipped', detail: 'testes não passaram' });
+    });
+
+    test(`lowest ${lowest}: format e editorconfig não dependem dele`, () => {
+      const input = baseInput({ lowest });
+      assert.deepEqual(sd(input, 'format'), { status: 'ok', detail: 'o código já estava formatado' });
+      assert.deepEqual(sd(input, 'editorconfig'), { status: 'ok', detail: 'sem problemas' });
+    });
+  }
 });
 
 test.describe('buildStages: audit', () => {
@@ -459,6 +505,12 @@ test.describe('buildStages: audit', () => {
   test('cancelled → etapa não concluída', () => {
     assert.deepEqual(sd(baseInput({ audit: { enabled: true, outcome: 'cancelled' } }), 'audit'), {
       status: 'error', detail: 'etapa não concluída (cancelled)',
+    });
+  });
+
+  test('skipped com a instalação concluída → etapa não concluída (skipped)', () => {
+    assert.deepEqual(sd(baseInput({ audit: { enabled: true, outcome: 'skipped' } }), 'audit'), {
+      status: 'error', detail: 'etapa não concluída (skipped)',
     });
   });
 });
@@ -539,6 +591,58 @@ test.describe('buildStages: format', () => {
     });
   });
 
+  test('install diferente de success → skipped (antes do exitCode)', () => {
+    for (const install of ['failure', 'skipped', 'cancelled']) {
+      assert.deepEqual(sd(baseInput({ install, format: { mode: 'commit', reason: null, config: 'dist', exitCode: 1, changedFiles: two, push: 'skipped' } }), 'format'), {
+        status: 'skipped', detail: 'dependências não instaladas',
+      }, install);
+    }
+  });
+
+  test('install diferente de success com fallback: skipped, sem o texto do fallback', () => {
+    assert.deepEqual(sd(baseInput({ install: 'failure', format: { mode: 'commit', reason: null, config: 'fallback', exitCode: 0, changedFiles: [], push: 'skipped' } }), 'format'), {
+      status: 'skipped', detail: 'dependências não instaladas',
+    });
+  });
+
+  test('syncFiles ausente equivale a []', () => {
+    const s = stage(fmt({ changedFiles: two, push: 'success' }), 'format');
+    assert.deepEqual(s.files, two);
+  });
+
+  test('files = changedFiles seguidos dos syncFiles que ainda não estão neles', () => {
+    const s = stage(fmt({
+      changedFiles: ['src/A.php', '.editorconfig'],
+      syncFiles: ['.editorconfig', '.php-cs-fixer.dist.php'],
+      push: 'success',
+    }), 'format');
+    assert.deepEqual(s.files, ['src/A.php', '.editorconfig', '.php-cs-fixer.dist.php']);
+    assert.equal(s.status, 'fixed');
+    assert.equal(s.detail, '3 arquivo(s) corrigido(s) no commit "style: organiza o código"');
+  });
+
+  test('só syncFiles: não está "já formatado"; <n> conta os syncFiles', () => {
+    const s = stage(fmt({ changedFiles: [], syncFiles: ['.editorconfig'], push: 'success' }), 'format');
+    assert.deepEqual(s.files, ['.editorconfig']);
+    assert.deepEqual({ status: s.status, detail: s.detail }, {
+      status: 'fixed', detail: '1 arquivo(s) corrigido(s) no commit "style: organiza o código"',
+    });
+  });
+
+  test('syncFiles no modo report e com push falho', () => {
+    const sync = ['.editorconfig', '.php-cs-fixer.dist.php'];
+    assert.deepEqual(sd(fmt({ mode: 'report', reason: 'push', changedFiles: ['src/A.php'], syncFiles: sync }), 'format'), {
+      status: 'warning', detail: '3 arquivo(s) precisam de formatação; sem commit automático em push na main',
+    });
+    assert.deepEqual(sd(fmt({ changedFiles: [], syncFiles: sync, push: 'failure' }), 'format'), {
+      status: 'warning', detail: '2 arquivo(s) precisam de formatação; o commit não pôde ser enviado (veja o log)',
+    });
+  });
+
+  test('changedFiles e syncFiles vazios → ok', () => {
+    assert.deepEqual(sd(fmt({ changedFiles: [], syncFiles: [] }), 'format'), { status: 'ok', detail: 'o código já estava formatado' });
+  });
+
   test('fallback: error continua error', () => {
     assert.deepEqual(sd(fmt({ config: 'fallback', exitCode: 16 }), 'format'), {
       status: 'error', detail: `o PHP-CS-Fixer falhou (código 16); veja o log${FALLBACK_SUFFIX}`,
@@ -569,6 +673,12 @@ test.describe('buildStages: editorconfig', () => {
   test('cancelled → etapa não concluída', () => {
     assert.deepEqual(sd(baseInput({ editorconfig: { present: true, outcome: 'cancelled' } }), 'editorconfig'), {
       status: 'error', detail: 'etapa não concluída (cancelled)',
+    });
+  });
+
+  test('present true e skipped → etapa não concluída (skipped)', () => {
+    assert.deepEqual(sd(baseInput({ editorconfig: { present: true, outcome: 'skipped' } }), 'editorconfig'), {
+      status: 'error', detail: 'etapa não concluída (skipped)',
     });
   });
 
@@ -607,6 +717,12 @@ for (const script of ['lint', 'analyse']) {
         status: 'error', detail: 'etapa não concluída (cancelled)',
       });
     });
+
+    test('skipped com instalação concluída e script presente → etapa não concluída (skipped)', () => {
+      assert.deepEqual(sd(baseInput({ [script]: 'skipped' }), script), {
+        status: 'error', detail: 'etapa não concluída (skipped)',
+      });
+    });
   });
 }
 
@@ -635,6 +751,14 @@ test.describe('buildStages: test', () => {
 
   test('cancelled → etapa não concluída', () => {
     assert.deepEqual(sd(baseInput({ test: 'cancelled' }), 'test'), { status: 'error', detail: 'etapa não concluída (cancelled)' });
+  });
+
+  test('skipped com instalação concluída e script presente → etapa não concluída (skipped)', () => {
+    assert.deepEqual(sd(baseInput({ test: 'skipped' }), 'test'), { status: 'error', detail: 'etapa não concluída (skipped)' });
+  });
+
+  test('skipped com instalação concluída: coverage fica skipped', () => {
+    assert.deepEqual(sd(baseInput({ test: 'skipped' }), 'coverage'), { status: 'skipped', detail: 'testes não passaram' });
   });
 });
 

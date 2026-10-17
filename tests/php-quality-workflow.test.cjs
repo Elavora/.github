@@ -249,6 +249,83 @@ test.describe('php-quality.yml: passos', () => {
     assert.match(t, /git diff --name-only/);
   });
 
+  test('PHP-CS-Fixer com arquivo de config: sem --rules, --allow-risky nem --using-cache', () => {
+    const withConfig = body().split('\n').filter((l) => /--config[= ]/.test(l));
+    assert.ok(withConfig.length > 0, 'precisa chamar php-cs-fixer fix --config=...');
+    for (const l of withConfig) {
+      assert.doesNotMatch(l, /--rules|--allow-risky|--using-cache/, l.trim());
+    }
+    // o fallback leva as três opções juntas
+    assert.match(body(), /--rules=@PER-CS --allow-risky=no --using-cache=no/);
+  });
+
+  test('composer install roda com scripts (sincronização do code-standards)', () => {
+    const installs = body().split('\n').filter((l) => /composer install\b/.test(l));
+    assert.ok(installs.length > 0);
+    for (const l of installs) assert.doesNotMatch(l, /--no-scripts/, l.trim());
+  });
+
+  test('syncFiles: registra .editorconfig e .php-cs-fixer.dist.php pelo git status', () => {
+    const t = body();
+    assert.match(t, /git status/);
+    assert.match(t, /\.editorconfig/);
+    assert.match(t, /\.php-cs-fixer\.dist\.php/);
+    assert.match(t, /syncFiles/);
+  });
+
+  test('composer.lock nunca entra no commit', () => {
+    // `git ... add` como subcomando (não confunde com `git config --add`)
+    const adds = body().split('\n').filter((l) => /\bgit(\s+-c\s+\S+)*\s+add\b/.test(l));
+    assert.ok(adds.length > 0, 'precisa de git add -- <arquivos>');
+    for (const l of adds) {
+      assert.doesNotMatch(l, /composer\.lock|vendor\/|\.elavora/, l.trim());
+      assert.doesNotMatch(l, /\badd\s+(-A|--all|-u|--update|\.|\*)(\s|$)/, l.trim());
+      assert.match(l, /add\s+--\s/, `git add precisa usar -- antes dos arquivos: ${l.trim()}`);
+    }
+    assert.doesNotMatch(body(), /commit\s+(-a|--all)\b/);
+  });
+
+  test('ordem dos passos: install, format, commit, editorconfig, lowest, audit, lint, analyse, test, relatório, resultado', () => {
+    // só dentro de jobs:, para não casar descrições das entradas
+    const jobs = block(readWorkflow(), 'jobs');
+    assert.ok(jobs, 'jobs ausente');
+    const t = jobs.join('\n');
+    const marcos = [
+      ['composer install', /composer install --no-progress --prefer-dist/],
+      ['formatMode', /formatMode/],
+      ['php-cs-fixer fix', /php-cs-fixer fix/],
+      ['push do commit', /core\.hooksPath=\/dev\/null/],
+      ['editorconfig-checker', /xargs -0 editorconfig-checker/],
+      ['composer update --prefer-lowest', /composer update --prefer-lowest/],
+      ['composer audit', /composer audit/],
+      ['composer lint', /composer lint/],
+      ['composer analyse', /composer analyse/],
+      ['composer test', /composer test/],
+      ['coveragePercent', /coveragePercent/],
+      ['renderReport', /renderReport/],
+      ['testes com erro', /testes com erro/],
+    ];
+    let anterior = -1;
+    let nomeAnterior = '(início)';
+    for (const [nome, re] of marcos) {
+      const m = re.exec(t);
+      assert.ok(m, `${nome} ausente`);
+      assert.ok(m.index > anterior, `${nome} precisa vir depois de ${nomeAnterior}`);
+      anterior = m.index;
+      nomeAnterior = nome;
+    }
+  });
+
+  test('composer update --prefer-lowest só com dependencies lowest', () => {
+    const t = body();
+    const i = t.search(/composer update --prefer-lowest/);
+    assert.ok(i >= 0);
+    // a condição do passo (if:) ou do shell precisa citar inputs.dependencies e lowest antes do comando
+    const antes = t.slice(Math.max(0, t.lastIndexOf('- name:', i)), i);
+    assert.match(antes, /dependencies/);
+    assert.match(antes, /lowest/);
+  });
+
   test('commit de formatação: identidade do bot, sem hooks e sem --force', () => {
     const t = body();
     assert.match(t, /github-actions\[bot\]/);
