@@ -259,7 +259,9 @@ Grupo `elavora-quality-${{ github.repository }}-${{ github.event.pull_request.nu
    persistir credenciais. Depois, confere a versão com `resolveAutomationRef`.
 5. **Decidir o modo de formatação** com `formatMode` (ver [Referência](#referência-scriptsqualitycjs)): `commit` ou
    `report`, e o motivo.
-6. **Ler os scripts do Composer** com `composerScripts` sobre o `composer.json`.
+6. **Ler os scripts do Composer** com `composerScripts` sobre o `composer.json`. Se a função lançar erro
+   (`composer.json` inválido), o passo registra a mensagem como aviso no log (`core.warning`) e segue com a lista
+   vazia. O erro de verdade aparece depois, na instalação, e o `composer test` ausente vira erro no relatório.
 7. **Instalar as dependências** com `composer install --no-progress --prefer-dist`, **com scripts**, sem
    interromper o job em caso de falha. É essa instalação que roda a sincronização do `elavora/code-standards`
    (`Elavora\CodeStandards\Composer::sync`) e pode criar ou alterar o `.editorconfig` e o `.php-cs-fixer.dist.php`.
@@ -337,8 +339,8 @@ há PR (push), e o resultado fica só no resumo do job.
   regras diferentes das que o CI usou. O `composer.lock`, `vendor/`, `.elavora/` e qualquer outro arquivo nunca
   entram, nem as mudanças da segunda sincronização (passo 11).
 - **Envio:** `git -c core.hooksPath=/dev/null push "https://x-access-token:${GITHUB_TOKEN}@github.com/<owner>/<repo>.git" HEAD:refs/heads/<branch do PR>`,
-  sem `--force`. Os hooks ficam desligados porque o código do repositório e das dependências já rodou nos passos
-  anteriores e poderia ter instalado um hook. Se a branch andou durante a execução, o push é recusado e a etapa
+  sem `--force`. Os hooks ficam desligados (`-c core.hooksPath=/dev/null`) **no commit e no push**, porque o código
+  do repositório e das dependências já rodou nos passos anteriores e poderia ter instalado um hook. Se a branch andou durante a execução, o push é recusado e a etapa
   vira aviso. A execução nova, disparada pelo push que moveu a branch, refaz a formatação.
 
 **Por que o lint e os testes rodam no mesmo job.** Um commit feito com o `GITHUB_TOKEN` não dispara outros

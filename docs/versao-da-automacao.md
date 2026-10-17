@@ -88,6 +88,11 @@ No `release.yml`, o job `release` expõe o ref resolvido numa saída interna (`a
 
 ## Riscos e limitações
 
+- **`automation_ref` só com espaços não é tratado no checkout.** O passo 1 e o `resolveAutomationRef` tratam esse
+  valor como vazio e vão para o OIDC, mas o checkout usa a expressão `inputs.automation_ref || <job_workflow_sha>`,
+  e uma string com espaços conta como preenchida. O checkout tenta o ref com espaços e falha. Informe uma versão
+  válida ou omita a entrada.
+
 - **O OIDC precisa estar habilitado** para o repositório e o chamador precisa conceder `id-token: write`. Sem isso,
   e sem `automation_ref`, o workflow falha logo no início com a mensagem abaixo.
 - **PRs de fork não recebem `id-token`.** No `php-quality.yml`, um PR de fork falha nesse passo, sem relatório nem
