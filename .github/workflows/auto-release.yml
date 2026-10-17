@@ -13,6 +13,7 @@ jobs:
     if: github.event.pull_request.merged == true
     permissions:
       contents: write
+      pull-requests: read
     uses: ./.github/workflows/release.yml
     with:
       automation_ref: ${{ github.event.pull_request.merge_commit_sha }}

@@ -25,7 +25,7 @@ on:
         required: false
     outputs:
       tag:
-        description: Tag criada ou reaproveitada.
+        description: Tag criada ou reaproveitada (vazia quando o merge já foi absorvido por outra tag).
         value: ${{ jobs.release.outputs.tag }}
       prerelease:
         description: "'true' para beta, 'false' para estável."
@@ -42,6 +42,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      pull-requests: read
     concurrency:
       group: elavora-release-${{ github.repository }}
       cancel-in-progress: false
@@ -59,14 +60,14 @@ jobs:
           fi
 
       - name: Checkout do merge
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
           fetch-tags: true
 
       - name: Checkout dos scripts do Elavora/.github
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Elavora/.github
           ref: ${{ inputs.automation_ref }}
@@ -74,27 +75,108 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts
 
-      - name: Calcular a versão
-        id: version
+      # Idempotência e intervalo de PRs desde a tag de partida (docs/release.md, "Intervalo de PRs").
+      - name: Levantar o intervalo de PRs
+        id: interval
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        with:
+          script: |
+            const { parseTag, aggregateLabels } = require(
+              `${process.env.GITHUB_WORKSPACE}/.elavora/scripts/release-version.cjs`,
+            );
+            const merge = process.env.MERGE_SHA;
+            const { owner, repo } = context.repo;
+
+            const git = async (...args) => (await exec.getExecOutput('git', args, { silent: true })).stdout.trim();
+            const isAncestor = async (ancestor, commit) => (await exec.exec(
+              'git', ['merge-base', '--is-ancestor', ancestor, commit], { ignoreReturnCode: true, silent: true },
+            )) === 0;
+            const rank = (t) => [t.major, t.minor, t.patch, t.beta === null ? Number.MAX_SAFE_INTEGER : t.beta];
+            const compare = (a, b) => {
+              const ra = rank(a);
+              const rb = rank(b);
+              for (let i = 0; i < ra.length; i += 1) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+              return 0;
+            };
+
+            // Só as tags reconhecidas na leitura, com o commit para onde apontam.
+            const refs = await git('for-each-ref', 'refs/tags', '--format=%(refname:short) %(objectname) %(*objectname)');
+            const tags = [];
+            for (const line of refs.split('\n').filter(Boolean)) {
+              const [name, object, peeled] = line.split(' ');
+              const parsed = parseTag(name);
+              if (parsed) tags.push({ ...parsed, commit: peeled || object });
+            }
+            tags.sort(compare);
+
+            // 1. Uma tag no formato novo já aponta para o merge: reaproveita.
+            const reused = tags.filter((t) => !t.legacy && t.commit === merge).at(-1);
+            if (reused) {
+              core.setOutput('mode', 'reuse');
+              core.setOutput('reused_tag', reused.name);
+              core.setOutput('pulls', '[]');
+              return;
+            }
+
+            // 2. O merge já está contido numa tag mais nova: foi absorvido por outra versão.
+            for (const t of tags) {
+              if (t.commit !== merge && await isAncestor(merge, t.commit)) {
+                core.setOutput('mode', 'absorbed');
+                core.setOutput('absorbed_by', t.name);
+                core.setOutput('pulls', '[]');
+                return;
+              }
+            }
+
+            // 3. Tag de partida: a de maior versão entre as que apontam para um ancestral do merge.
+            let start = null;
+            for (const t of tags) {
+              if (await isAncestor(t.commit, merge)) start = t;
+            }
+            const range = start ? `${start.commit}..${merge}` : merge;
+            const commits = (await git('rev-list', '--first-parent', range)).split('\n').filter(Boolean);
+
+            const pulls = new Map();
+            for (const sha of commits) {
+              const associated = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                owner, repo, commit_sha: sha, per_page: 100,
+              });
+              for (const pr of associated) {
+                if (!pr.merged_at || pr.base?.ref !== 'main' || pulls.has(pr.number)) continue;
+                pulls.set(pr.number, { number: pr.number, labels: pr.labels.map((l) => l.name) });
+              }
+            }
+
+            // O PR do evento entra sempre, com as labels do payload.
+            const event = context.payload.pull_request;
+            pulls.set(event.number, { number: event.number, labels: event.labels.map((l) => l.name) });
+
+            const list = [...pulls.values()].sort((a, b) => a.number - b.number);
+            core.setOutput('mode', 'new');
+            core.setOutput('start', start ? start.name : '');
+            core.setOutput('labels', JSON.stringify(aggregateLabels(list)));
+            core.setOutput('pulls', JSON.stringify(list));
+
+      - name: Calcular a versão
+        id: version
+        if: steps.interval.outputs.mode != 'absorbed'
+        env:
+          MODE: ${{ steps.interval.outputs.mode }}
+          REUSED_TAG: ${{ steps.interval.outputs.reused_tag }}
+          LABELS: ${{ steps.interval.outputs.labels }}
         run: |
           set -euo pipefail
-          NUM='(0|[1-9][0-9]*)'
-          PATTERN="^${NUM}\.${NUM}\.${NUM}(-beta\.[1-9][0-9]*)?$"
-
-          # Idempotência: uma tag no formato novo que já aponta para o merge é reaproveitada.
-          EXISTING="$(git tag --points-at "$MERGE_SHA" | grep -E "$PATTERN" | sort -V | tail -n 1 || true)"
-          if [[ -n "$EXISTING" ]]; then
-            TAG="$EXISTING"
+          if [[ "$MODE" == 'reuse' ]]; then
+            TAG="$REUSED_TAG"
             if [[ "$TAG" == *-beta.* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
             BUMP='(tag reaproveitada)'
             PREVIOUS='-'
             REUSED=true
           else
             TAGS="$(git tag --list)"
-            RESULT="$(node .elavora/scripts/release-version.cjs "$TAGS" "$PR_LABELS")"
+            RESULT="$(node .elavora/scripts/release-version.cjs "$TAGS" "$LABELS")"
             TAG="$(jq -r '.tag' <<< "$RESULT")"
             PRERELEASE="$(jq -r '.prerelease' <<< "$RESULT")"
             BUMP="$(jq -r '.bump' <<< "$RESULT")"
@@ -111,8 +193,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Criar tag, release e dispatch
-        id: publish
-        uses: actions/github-script@v7
+        if: steps.version.outputs.tag != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
@@ -155,34 +237,58 @@ jobs:
             });
 
       - name: Resumo
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          MODE: ${{ steps.interval.outputs.mode }}
+          ABSORBED_BY: ${{ steps.interval.outputs.absorbed_by }}
+          START_TAG: ${{ steps.interval.outputs.start }}
+          PULLS: ${{ steps.interval.outputs.pulls }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
           RELEASE_BUMP: ${{ steps.version.outputs.bump }}
           RELEASE_PREVIOUS: ${{ steps.version.outputs.previous }}
-        run: |
-          {
-            echo "## Release $RELEASE_TAG"
-            echo ""
-            echo "| Campo | Valor |"
-            echo "| --- | --- |"
-            echo "| Tag | \`$RELEASE_TAG\` |"
-            echo "| Pré-release | $RELEASE_PRERELEASE |"
-            echo "| Incremento | $RELEASE_BUMP |"
-            echo "| Estável anterior | $RELEASE_PREVIOUS |"
-          } >> "$GITHUB_STEP_SUMMARY"
+        with:
+          script: |
+            const env = process.env;
+            if (env.MODE === 'absorbed') {
+              await core.summary
+                .addHeading('Release', 2)
+                .addRaw(`Este merge já está contido na tag \`${env.ABSORBED_BY}\`. Nenhuma tag ou release foi criada.`, true)
+                .write();
+              return;
+            }
+            const pulls = JSON.parse(env.PULLS || '[]');
+            core.summary
+              .addHeading(`Release ${env.RELEASE_TAG}`, 2)
+              .addTable([
+                [{ data: 'Campo', header: true }, { data: 'Valor', header: true }],
+                ['Tag', env.RELEASE_TAG],
+                ['Pré-release', env.RELEASE_PRERELEASE],
+                ['Incremento', env.RELEASE_BUMP],
+                ['Estável anterior', env.RELEASE_PREVIOUS],
+                ['Tag de partida', env.START_TAG || '-'],
+              ]);
+            if (pulls.length) {
+              core.summary
+                .addHeading('PRs do intervalo', 3)
+                .addTable([
+                  [{ data: 'PR', header: true }, { data: 'Labels', header: true }],
+                  ...pulls.map((p) => [`#${p.number}`, p.labels.join(', ') || '-']),
+                ]);
+            }
+            await core.summary.write();
 
   packagist:
     name: Atualizar Packagist
     needs: release
-    if: needs.release.result == 'success' && inputs.packagist
+    if: needs.release.result == 'success' && needs.release.outputs.tag != '' && inputs.packagist
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
     steps:
       - name: Checkout dos scripts do Elavora/.github
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Elavora/.github
           ref: ${{ inputs.automation_ref }}
@@ -191,7 +297,7 @@ jobs:
           sparse-checkout: scripts
 
       - name: Notificar o Packagist
-        uses: actions/github-script@v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
         with:

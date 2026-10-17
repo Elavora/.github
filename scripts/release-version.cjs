@@ -44,6 +44,28 @@ function bumpFromLabels(labels) {
   return 'patch';
 }
 
+// União das labels dos PRs do intervalo, sem repetir nomes sem diferenciar caixa.
+// Fica a grafia da primeira ocorrência, na ordem dos PRs e das labels.
+function aggregateLabels(pulls) {
+  if (!Array.isArray(pulls)) throw new TypeError('pulls precisa ser um array de { number, labels }');
+  const seen = new Set();
+  const result = [];
+  for (const pull of pulls) {
+    if (pull === null || typeof pull !== 'object') {
+      throw new TypeError('cada PR precisa ser um objeto { number, labels }');
+    }
+    assertLabels(pull.labels);
+    for (const label of pull.labels) {
+      const key = label.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(label);
+      }
+    }
+  }
+  return result;
+}
+
 function compareBase(a, b) {
   return a.major - b.major || a.minor - b.minor || a.patch - b.patch;
 }
@@ -121,4 +143,6 @@ if (require.main === module) {
   }
 }
 
-module.exports = { BUMP_LABELS, parseTag, bumpFromLabels, nextVersion };
+module.exports = {
+  BUMP_LABELS, parseTag, bumpFromLabels, aggregateLabels, nextVersion,
+};
