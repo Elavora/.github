@@ -25,15 +25,15 @@ de 17:
 | `upgrade` | `5319e7` | Alteração incompatível; gera versão major | major |
 | `release` | `0052cc` | Gera versão estável em vez de pré-release | estabilidade |
 | `feature` | `0e8a16` | Nova funcionalidade compatível; gera versão minor | minor |
-| `improvement` | `84b6eb` | Melhoria compatível; gera versão minor | minor (provisório) |
+| `improvement` | `84b6eb` | Melhoria compatível; gera versão minor | minor |
 | `refactor` | `fbca04` | Refatoração sem mudança funcional | patch |
 | `tests` | `bfdadc` | Criação ou alteração de testes | patch |
 | `deprecated` | `e4e669` | Recurso obsoleto ou em processo de remoção | patch |
 | `dependencies` | `0366d6` | Atualização de dependências | patch |
 
 As regras completas de versão estão em [versionamento.md](versionamento.md). `enhancement`, `feature` e
-`improvement` são labels próprias (não aliases) e as três dão minor. `improvement` → minor ainda está para
-confirmar com o usuário; trocar a faixa é editar só `BUMP_LABELS` em `scripts/release-version.cjs`.
+`improvement` são labels próprias (não aliases) e as três dão minor. Trocar a faixa de uma label é editar só
+`BUMP_LABELS` em `scripts/release-version.cjs`.
 
 `major`, `minor`, `patch` e `breaking` não fazem parte do catálogo e são apagadas onde existirem, como qualquer
 outra label local.

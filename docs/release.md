@@ -45,8 +45,9 @@ Só `workflow_call`. Ele espera ser chamado a partir de um evento `pull_request`
 
 ### Permissões
 
-O job do chamador precisa conceder `contents: write`, porque um workflow reutilizável não consegue pedir mais
-permissões do que o chamador deu. O job do Packagist usa só `contents: read`.
+O job do chamador precisa conceder `contents: write` (para criar tag e release) e `pull-requests: read` (para
+levantar os PRs do intervalo, ver abaixo), porque um workflow reutilizável não consegue pedir mais permissões do
+que o chamador deu. O job do Packagist usa só `contents: read`.
 
 ### Condições de execução
 
@@ -56,19 +57,31 @@ e o job aparece como `skipped`, sem falha.
 
 ### Concorrência
 
-As execuções são serializadas por repositório (grupo `elavora-release-<owner>/<repo>`, sem cancelar as que estão
-em andamento). Dois merges seguidos geram duas versões em sequência, e o segundo cálculo já enxerga a tag do primeiro.
+As execuções são serializadas por repositório (grupo `elavora-release-<owner>/<repo>`, sem cancelar a que está
+em andamento). O GitHub guarda só **uma** execução pendente por grupo: com três merges seguidos (A, B e C), enquanto
+A roda, a execução de B fica pendente e é cancelada quando chega a de C.
+
+Por isso a versão não é calculada só com o PR do evento, e sim com **todos os PRs integrados desde a última tag**
+(ver [Intervalo de PRs](#intervalo-de-prs)). No exemplo, C enxerga B e A: se B tinha `upgrade`, a tag de C já sai
+major. Nenhuma label se perde.
+
+**Limitação**: um merge cuja execução foi cancelada não ganha tag própria. Ele entra na tag seguinte, que contém
+os seus commits. No exemplo, ficam as tags de A e de C, e não existe tag apontando para o merge de B.
 
 ### Job `release`
 
 1. Faz checkout do repositório no `merge_commit_sha` do PR, com o histórico e as tags completos.
 2. Faz checkout de `Elavora/.github` em `automation_ref`, só com `scripts/`, em `.elavora/` e sem persistir
    credenciais.
-3. **Idempotência**: se uma tag reconhecida pelo formato novo (`X.Y.Z` ou `X.Y.Z-beta.N`) já aponta para o
-   `merge_commit_sha`, ela é reaproveitada e não se cria outra. Assim, reexecutar o workflow do mesmo merge não gera
-   versão duplicada.
-4. Caso contrário, calcula a versão com `node .elavora/scripts/release-version.cjs`, passando todas as tags do
-   repositório e as labels do PR.
+3. **Idempotência**:
+   - se uma tag reconhecida pelo formato novo (`X.Y.Z` ou `X.Y.Z-beta.N`) já aponta para o `merge_commit_sha`, ela
+     é reaproveitada e não se cria outra. Assim, reexecutar o workflow do mesmo merge não gera versão duplicada;
+   - se o `merge_commit_sha` já está contido numa tag reconhecida mais nova (é ancestral do commit dela), o merge
+     já foi absorvido por outra versão. O job termina com sucesso, sem criar tag nem release, com a saída `tag`
+     vazia e um resumo dizendo em qual tag o merge está. O job `packagist` não roda. É o caso de reexecutar uma
+     execução que tinha sido cancelada.
+4. Levanta o intervalo de PRs e as labels agregadas (ver abaixo) e calcula a versão com
+   `node .elavora/scripts/release-version.cjs`, passando todas as tags do repositório e as labels agregadas.
 5. Cria a tag (`refs/tags/<tag>`) apontando para o `merge_commit_sha` do PR. Isso vale também para a promoção de
    uma beta: a estável inclui o que veio no PR com `release`.
 6. Cria a GitHub Release, se ainda não existir uma para essa tag:
@@ -79,7 +92,27 @@ em andamento). Dois merges seguidos geram duas versões em sequência, e o segun
 7. Envia `repository_dispatch` com `event_type: tag-created` e
    `client_payload: { tag, release_id, prerelease }`, que os workflows do repositório usam para publicar artefatos
    da versão (exemplo: a imagem do `devcontainers`).
-8. Publica um resumo (`$GITHUB_STEP_SUMMARY`) com a tag, se é pré-release, o incremento e a estável anterior.
+8. Publica um resumo (`$GITHUB_STEP_SUMMARY`) com a tag, se é pré-release, o incremento, a estável anterior e a
+   lista dos PRs do intervalo (número e labels).
+
+### Intervalo de PRs
+
+1. **Tag de partida**: entre as tags reconhecidas na leitura (ver [versionamento.md](versionamento.md#tags-reconhecidas-na-leitura)),
+   as que apontam para um ancestral do `merge_commit_sha`; dessas, a de maior versão. Tags ignoradas na leitura
+   (como as `rc` legadas) não servem de partida. Sem nenhuma, o intervalo começa no primeiro commit do repositório.
+2. **Commits**: `git rev-list --first-parent <tag de partida>..<merge_commit_sha>` (ou só `<merge_commit_sha>` sem
+   tag de partida). O `--first-parent` pega um commit por PR em merge commit, e todos os commits em squash e rebase.
+3. **PRs**: para cada commit, os PRs associados pela API (`GET /repos/{owner}/{repo}/commits/{sha}/pulls`), mantendo
+   só os que foram integrados (`merged_at` preenchido) com base `main`, sem repetir número.
+4. **PR do evento**: entra sempre, com as labels do payload do evento, mesmo que a API não o devolva. Se a API
+   também o devolver, valem as labels do payload.
+5. **Labels agregadas**: `aggregateLabels(pulls)`, de `scripts/release-version.cjs` (ver
+   [versionamento.md](versionamento.md#funções-exportadas)). Vale a maior label entre todos os PRs, e `release` em
+   qualquer um deles gera estável.
+
+Exemplo: a última tag é `1.1.1`. Depois dela entraram o #10 (`bug`, execução concluída e tag `1.1.2-beta.1`),
+o #11 (`upgrade`, execução cancelada) e o #12 (`documentation`). A execução do #12 parte de `1.1.2-beta.1`,
+enxerga o #11 e o #12, agrega `upgrade` e `documentation` e gera `2.0.0-beta.1`, apontando para o merge do #12.
 
 Tags criadas com o `GITHUB_TOKEN` não disparam `push: tags` nem `release: published` em outros workflows. Por isso
 o fluxo usa `repository_dispatch` e faz a notificação ao Packagist no próprio workflow.
@@ -164,6 +197,7 @@ jobs:
     if: github.event.pull_request.merged == true
     permissions:
       contents: write
+      pull-requests: read
     uses: Elavora/.github/.github/workflows/release.yml@1.0.0
     with:
       automation_ref: 1.0.0
@@ -199,6 +233,7 @@ jobs:
     if: github.event.pull_request.merged == true
     permissions:
       contents: write
+      pull-requests: read
     uses: ./.github/workflows/release.yml
     with:
       automation_ref: ${{ github.event.pull_request.merge_commit_sha }}

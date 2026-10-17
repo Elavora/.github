@@ -2,7 +2,18 @@
 
 Toda vez que um pull request é integrado na `main` de um repositório Elavora, o workflow central de release
 (ver [release.md](release.md)) cria uma tag e uma GitHub Release. A versão é calculada só a partir de duas
-entradas: as tags que já existem no repositório e as labels do pull request integrado.
+entradas: as tags que já existem no repositório e as **labels agregadas** de todos os pull requests integrados na
+`main` desde a última tag, incluindo o do merge atual.
+
+Normalmente só existe um PR nesse intervalo, o do merge atual. Mais de um aparece quando a execução de um merge
+anterior foi cancelada pela fila de concorrência do GitHub (ver [release.md](release.md#concorrência)). Nesse
+caso, a versão nova absorve os PRs que ficaram sem tag:
+
+- vale a maior label entre todos os PRs do intervalo (um `upgrade` em qualquer um deles gera major);
+- `release` em qualquer um deles gera estável.
+
+O workflow levanta os PRs e passa as labels já agregadas para o cálculo, que é uma função pura. Nas regras abaixo,
+"labels do PR" significa essas labels agregadas.
 
 Esta página é a especificação do cálculo, implementado em `scripts/release-version.cjs`.
 
@@ -38,7 +49,7 @@ As labels são comparadas sem diferenciar maiúsculas de minúsculas (`Enhanceme
 | qualquer outra label, ou nenhuma label | patch |
 
 - `enhancement`, `feature` e `improvement` são labels próprias do catálogo, e não aliases umas das outras.
-  As três dão minor. `improvement` → minor é provisório (a confirmar com o usuário).
+  As três dão minor.
 - Se o PR tiver várias labels, vale o maior incremento: major > minor > patch.
   Exemplo: `bug` + `enhancement` → minor, e `upgrade` + `bug` → major.
 - Todo merge gera uma versão, e não existe label que pule a release.
@@ -133,6 +144,15 @@ As versões são comparadas numericamente, componente a componente (`1.10.0` > `
   - `parseTag('1.2.0-beta.3')` → `{ name: '1.2.0-beta.3', major: 1, minor: 2, patch: 0, beta: 3, legacy: false }`
   - `parseTag('v0.2.0')` → `{ name: 'v0.2.0', major: 0, minor: 2, patch: 0, beta: null, legacy: true }`
   - `parseTag('v1.0.0-rc.1')`, `parseTag('1.2.0-beta.0')` e `parseTag('01.2.0')` → `null`
+- `aggregateLabels(pulls: { number: number, labels: string[] }[])`: devolve a união das labels de todos os PRs, sem
+  repetir nomes iguais sem diferenciar maiúsculas de minúsculas (fica a grafia da primeira ocorrência, na ordem dos
+  PRs e das labels). A ordem dos PRs não altera o resultado de `nextVersion`.
+  - `aggregateLabels([{ number: 10, labels: ['bug'] }, { number: 11, labels: ['upgrade'] }, { number: 12, labels: ['Bug', 'release'] }])`
+    → `['bug', 'upgrade', 'release']`
+  - `aggregateLabels([{ number: 1, labels: [] }])` → `[]`; `aggregateLabels([])` → `[]`
+  - `pulls` que não seja array, ou PR sem `labels` como array de strings, lança `TypeError`.
+  - Com o resultado, `nextVersion({ tags: ['1.1.1'], labels })` gera `2.0.0`: major por causa do #11 e estável por
+    causa do #12.
 - `BUMP_LABELS`: o objeto `{ major: string[], minor: string[] }` descrito em
   [Onde fica o mapeamento](#onde-fica-o-mapeamento), com os nomes em minúsculas.
 - `bumpFromLabels(labels: string[])`: devolve `'major' | 'minor' | 'patch'`, usando `BUMP_LABELS`.
@@ -183,4 +203,5 @@ abaixo deixa de valer:
 | labels locais fora do catálogo eram mantidas ou apagadas conforme o repo | todo repo fica só com as labels do catálogo |
 | a base da prévia era recalculada só com as labels do PR atual, então uma correção depois de uma prévia minor voltava para a linha patch (`v1.2.0-rc.1` seguida de `v1.1.2-rc.1`) | a base nunca anda para trás (`1.2.0-beta.1` seguida de `1.2.0-beta.2`) |
 | `release` ignorava as outras labels ao promover | `release` com `upgrade` sobre `1.2.0-beta.3` gera `2.0.0` |
+| a versão usava só as labels do PR do evento; com uma execução cancelada na fila, as labels daquele PR se perdiam | a versão usa as labels agregadas de todos os PRs desde a última tag |
 | a estável promovida apontava para o commit da prévia | a estável aponta para o merge do PR com `release` (ver [release.md](release.md)) |
