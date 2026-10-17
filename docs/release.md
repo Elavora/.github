@@ -79,7 +79,8 @@ os seus commits. No exemplo, ficam as tags de A e de C, e não existe tag aponta
    - se o `merge_commit_sha` já está contido numa tag reconhecida mais nova (é ancestral do commit dela), o merge
      já foi absorvido por outra versão. O job termina com sucesso, sem criar tag nem release, com a saída `tag`
      vazia e um resumo dizendo em qual tag o merge está. O job `packagist` não roda. É o caso de reexecutar uma
-     execução que tinha sido cancelada.
+     execução que tinha sido cancelada. Essa checagem considera todas as tags reconhecidas na leitura, inclusive
+     as estáveis legadas `vX.Y.Z`. Quando mais de uma tag contém o merge, o resumo cita a de menor versão.
 4. Levanta o intervalo de PRs e as labels agregadas (ver abaixo) e calcula a versão com
    `node .elavora/scripts/release-version.cjs`, passando todas as tags do repositório e as labels agregadas.
 5. Cria a tag (`refs/tags/<tag>`) apontando para o `merge_commit_sha` do PR. Isso vale também para a promoção de
@@ -109,6 +110,12 @@ os seus commits. No exemplo, ficam as tags de A e de C, e não existe tag aponta
 5. **Labels agregadas**: `aggregateLabels(pulls)`, de `scripts/release-version.cjs` (ver
    [versionamento.md](versionamento.md#funções-exportadas)). Vale a maior label entre todos os PRs, e `release` em
    qualquer um deles gera estável.
+
+**Custo**: a coleta faz uma chamada à API por commit do intervalo. No dia a dia o intervalo tem um commit só. Na
+primeira release de um repositório sem tag reconhecida (o `.github`, ou o `devcontainers`, que só tem a `rc`
+legada `v0.0.1-rc.1`), o intervalo é todo o histórico first-parent da `main`, e a coleta faz uma chamada por commit
+desse histórico. Nessa primeira vez, as labels de todos os PRs antigos também entram na agregação: confira se algum
+tem `upgrade` ou `release` antes de adotar.
 
 Exemplo: a última tag é `1.1.1`. Depois dela entraram o #10 (`bug`, execução concluída e tag `1.1.2-beta.1`),
 o #11 (`upgrade`, execução cancelada) e o #12 (`documentation`). A execução do #12 parte de `1.1.2-beta.1`,

@@ -29,4 +29,9 @@ No PowerShell, use `${PWD}` no lugar de `$PWD`.
 
 O workflow `.github/workflows/test.yml` roda em todo PR e em push na `main`. Ele executa os testes com o mesmo
 comando (`node --test "tests/*.test.cjs"`) e o
-`actionlint` (`rhysd/actionlint`, em container) sobre os workflows de `.github/workflows/`.
+`actionlint` 1.7.12 (`rhysd/actionlint:1.7.12`, em container) sobre os workflows de `.github/workflows/`.
+
+As actions de terceiros nos workflows ficam fixadas por SHA completo, com a versão em comentário:
+`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1` (v7.0.1) e
+`actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3` (v9.0.0). Para atualizar uma delas, troque o SHA e
+o comentário em todos os workflows.
