@@ -1,1 +1,28 @@
 # .github
+
+Automação compartilhada da organização Elavora. Os outros repositórios (`devcontainers` e os pacotes `api-*`)
+chamam os workflows reutilizáveis daqui, fixando uma versão deste repositório.
+
+| O quê | Arquivos | Documentação |
+| --- | --- | --- |
+| Release automática a cada merge na `main`, com notificação ao Packagist | `.github/workflows/release.yml`, `scripts/release-version.cjs`, `scripts/packagist.cjs` | [docs/release.md](docs/release.md) |
+| Regras de versão (`X.Y.Z` e `X.Y.Z-beta.N` pelas labels do PR) | `scripts/release-version.cjs` | [docs/versionamento.md](docs/versionamento.md) |
+| Labels padrão e sincronização | `.github/labels.json`, `.github/workflows/sync-labels.yml`, `scripts/sync-labels.cjs` | [docs/labels.md](docs/labels.md) |
+
+Este repositório também é versionado pelo próprio fluxo (chamadores `auto-release.yml` e `auto-sync-labels.yml`).
+Nos consumidores, use uma tag estável deste repositório no `uses` e no `automation_ref`.
+
+## Desenvolvimento
+
+Os scripts usam só módulos nativos do Node.js (20 ou mais novo), sem `npm install`. Os testes ficam em
+`tests/*.test.cjs`, usam `node:test` e nunca fazem chamadas reais ao GitHub nem ao Packagist (o `fetch` e o `sleep`
+são injetados). Eles rodam em container, sem instalar nada na máquina:
+
+```sh
+docker run --rm -v "$PWD:/work:ro" -w /work node:22-alpine node --test tests/
+```
+
+No PowerShell, use `${PWD}` no lugar de `$PWD`.
+
+O workflow `.github/workflows/test.yml` roda em todo PR e em push na `main`. Ele executa os testes acima e o
+`actionlint` (`rhysd/actionlint`, em container) sobre os workflows de `.github/workflows/`.
