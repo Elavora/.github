@@ -130,6 +130,12 @@ test.describe('notifyPackagist', () => {
     'Elavora/api-',
     'Elavora/api-framework/x',
     'https://github.com/Elavora/api-framework',
+    'elavora/code-standards',
+    'Elavora/Code-Standards',
+    'Outra/code-standards',
+    'Elavora/code-standards-x',
+    'Elavora/code-standards/x',
+    'Elavora/xcode-standards',
     '',
     undefined,
   ]) {
@@ -171,6 +177,16 @@ test.describe('notifyPackagist', () => {
       repository: 'Elavora/api-cache-redis2', webhookUrl: WEBHOOK, fetchImpl, sleep: fakeSleep(),
     });
     assert.deepEqual(r, { attempts: 1 });
+  });
+
+  test('aceita Elavora/code-standards', async () => {
+    const fetchImpl = fakeFetch([sucesso]);
+    const r = await notifyPackagist({
+      repository: 'Elavora/code-standards', webhookUrl: WEBHOOK, fetchImpl, sleep: fakeSleep(),
+    });
+    assert.deepEqual(r, { attempts: 1 });
+    assert.equal(fetchImpl.calls.length, 1);
+    assert.deepEqual(JSON.parse(fetchImpl.calls[0].options.body), { repository: 'https://github.com/Elavora/code-standards' });
   });
 
   const transitórios = [

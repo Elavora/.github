@@ -4,7 +4,7 @@
 // Nenhuma mensagem de erro inclui a URL do secret, o token ou o corpo da resposta.
 
 const ENDPOINT = 'https://packagist.org/api/update-package';
-const REPOSITORY_PATTERN = /^Elavora\/api-[a-z0-9-]+$/;
+const REPOSITORY_PATTERN = /^Elavora\/(api-[a-z0-9-]+|code-standards)$/;
 const MAX_ATTEMPTS = 4;
 const TIMEOUT_MS = 30000;
 
@@ -74,7 +74,7 @@ async function attempt({ repository, auth, fetchImpl }) {
 
 async function notifyPackagist({ repository, webhookUrl, fetchImpl = fetch, sleep = defaultSleep } = {}) {
   if (typeof repository !== 'string' || !REPOSITORY_PATTERN.test(repository)) {
-    throw new Error('repositório inválido: esperado Elavora/api-<nome>');
+    throw new Error('repositório inválido: esperado Elavora/api-<nome> ou Elavora/code-standards');
   }
   const auth = credentials(webhookUrl);
 
