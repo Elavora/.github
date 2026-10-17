@@ -6,9 +6,10 @@ on:
   workflow_call:
     inputs:
       automation_ref:
-        description: Versão do Elavora/.github (tag estável ou SHA completo), a mesma do uses.
-        required: true
+        description: Versão do Elavora/.github (tag estável ou SHA completo), a mesma do uses. Vazia, é descoberta pelo OIDC.
+        required: false
         type: string
+        default: ''
       package_name:
         description: Nome exibido no título da release. Padrão é o nome do repositório.
         required: false
@@ -31,8 +32,7 @@ on:
         description: "'true' para beta, 'false' para estável."
         value: ${{ jobs.release.outputs.prerelease }}
 
-permissions:
-  contents: read
+# Não declara permissions: herda as do job chamador (docs/versao-da-automacao.md, "Permissões").
 
 jobs:
   release:
@@ -40,24 +40,51 @@ jobs:
     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write
-      pull-requests: read
     concurrency:
       group: elavora-release-${{ github.repository }}
       cancel-in-progress: false
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      automation_ref: ${{ steps.automation_ref.outputs.ref }}
     steps:
-      - name: Validar automation_ref
+      # Passos comuns: docs/versao-da-automacao.md (os scripts ainda não foram baixados).
+      - name: Obter a versão da automação
+        id: automation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           AUTOMATION_REF: ${{ inputs.automation_ref }}
-        run: |
-          if [[ -z "${AUTOMATION_REF// /}" ]]; then
-            echo "::error::automation_ref é obrigatório (tag estável ou SHA completo do Elavora/.github)."
-            exit 1
-          fi
+        with:
+          script: |
+            const OIDC_UNAVAILABLE_MESSAGE = 'não foi possível descobrir a versão do Elavora/.github: conceda "id-token: write" ao job chamador ou informe a entrada automation_ref (PRs de fork não recebem id-token)';
+            const input = (process.env.AUTOMATION_REF || '').trim();
+            if (input) {
+              core.info(`Versão da automação informada: ${input}.`);
+              return;
+            }
+
+            let idToken;
+            try {
+              idToken = await core.getIDToken();
+            } catch {
+              core.setFailed(OIDC_UNAVAILABLE_MESSAGE);
+              return;
+            }
+            core.setSecret(idToken);
+
+            let claims = null;
+            try {
+              const parts = idToken.split('.');
+              if (parts.length === 3) claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            } catch {
+              claims = null;
+            }
+            if (!claims || typeof claims !== 'object' || Array.isArray(claims)) {
+              core.setFailed('token OIDC inválido: não foi possível ler as claims');
+              return;
+            }
+            core.setOutput('job_workflow_ref', String(claims.job_workflow_ref ?? ''));
+            core.setOutput('job_workflow_sha', String(claims.job_workflow_sha ?? ''));
 
       - name: Checkout do merge
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,10 +97,34 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Elavora/.github
-          ref: ${{ inputs.automation_ref }}
+          ref: ${{ inputs.automation_ref || steps.automation.outputs.job_workflow_sha }}
           path: .elavora
           persist-credentials: false
           sparse-checkout: scripts
+
+      - name: Conferir a versão da automação
+        id: automation_ref
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          AUTOMATION_REF: ${{ inputs.automation_ref }}
+          JOB_WORKFLOW_REF: ${{ steps.automation.outputs.job_workflow_ref }}
+          JOB_WORKFLOW_SHA: ${{ steps.automation.outputs.job_workflow_sha }}
+        with:
+          script: |
+            const { resolveAutomationRef } = require(
+              `${process.env.GITHUB_WORKSPACE}/.elavora/scripts/automation-ref.cjs`,
+            );
+            const env = process.env;
+            const oidcClaims = env.JOB_WORKFLOW_REF || env.JOB_WORKFLOW_SHA
+              ? { job_workflow_ref: env.JOB_WORKFLOW_REF, job_workflow_sha: env.JOB_WORKFLOW_SHA }
+              : null;
+            try {
+              const { ref, source } = resolveAutomationRef({ input: env.AUTOMATION_REF, oidcClaims });
+              core.info(`Versão da automação: ${ref} (${source}).`);
+              core.setOutput('ref', ref);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
 
       # Idempotência e intervalo de PRs desde a tag de partida (docs/release.md, "Intervalo de PRs").
       - name: Levantar o intervalo de PRs
@@ -284,14 +335,12 @@ jobs:
     if: needs.release.result == 'success' && needs.release.outputs.tag != '' && inputs.packagist
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
     steps:
       - name: Checkout dos scripts do Elavora/.github
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Elavora/.github
-          ref: ${{ inputs.automation_ref }}
+          ref: ${{ needs.release.outputs.automation_ref }}
           path: .elavora
           persist-credentials: false
           sparse-checkout: scripts

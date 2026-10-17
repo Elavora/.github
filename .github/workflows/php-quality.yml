@@ -1,0 +1,430 @@
+name: Qualidade PHP reutilizável
+
+# Especificação: docs/qualidade.md e docs/versao-da-automacao.md.
+# Não declara permissions: herda as do job chamador (contents: write, pull-requests: write, id-token: write).
+
+on:
+  workflow_call:
+    inputs:
+      automation_ref:
+        description: Versão do Elavora/.github (tag estável ou SHA completo), a mesma do uses. Vazia, é descoberta pelo OIDC.
+        required: false
+        type: string
+        default: ''
+      image:
+        description: Imagem do job (use só imagens ghcr.io/elavora/php-dev).
+        required: false
+        type: string
+        default: ghcr.io/elavora/php-dev:8.3-0.2.0
+      coverage_min:
+        description: Cobertura mínima em %. Abaixo dela, o relatório mostra aviso. 0 desliga a etapa.
+        required: false
+        type: number
+        default: 80
+      composer_audit:
+        description: Roda composer audit depois de instalar as dependências.
+        required: false
+        type: boolean
+        default: true
+      dependencies:
+        description: lowest instala as versões mínimas; install usa composer install.
+        required: false
+        type: string
+        default: lowest
+
+concurrency:
+  group: elavora-quality-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Qualidade PHP
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ${{ inputs.image }}
+      options: --user root
+    env:
+      COMPOSER_ALLOW_SUPERUSER: '1'
+      COMPOSER_NO_INTERACTION: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # 1. Entradas e versão da automação (os scripts ainda não foram baixados).
+      - name: Validar as entradas e obter a versão da automação
+        id: automation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DEPENDENCIES: ${{ inputs.dependencies }}
+          AUTOMATION_REF: ${{ inputs.automation_ref }}
+        with:
+          script: |
+            const dependencies = process.env.DEPENDENCIES;
+            if (dependencies !== 'lowest' && dependencies !== 'install') {
+              core.setFailed(`entrada dependencies inválida: "${dependencies}" (use lowest ou install)`);
+              return;
+            }
+
+            const OIDC_UNAVAILABLE_MESSAGE = 'não foi possível descobrir a versão do Elavora/.github: conceda "id-token: write" ao job chamador ou informe a entrada automation_ref (PRs de fork não recebem id-token)';
+            const input = (process.env.AUTOMATION_REF || '').trim();
+            if (input) {
+              core.info(`Versão da automação informada: ${input}.`);
+              return;
+            }
+
+            let idToken;
+            try {
+              idToken = await core.getIDToken();
+            } catch {
+              core.setFailed(OIDC_UNAVAILABLE_MESSAGE);
+              return;
+            }
+            core.setSecret(idToken);
+
+            let claims = null;
+            try {
+              const parts = idToken.split('.');
+              if (parts.length === 3) claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            } catch {
+              claims = null;
+            }
+            if (!claims || typeof claims !== 'object' || Array.isArray(claims)) {
+              core.setFailed('token OIDC inválido: não foi possível ler as claims');
+              return;
+            }
+            core.setOutput('job_workflow_ref', String(claims.job_workflow_ref ?? ''));
+            core.setOutput('job_workflow_sha', String(claims.job_workflow_sha ?? ''));
+
+      # 2. Último commit da branch do PR (não o merge com a main), ou o commit do push.
+      - name: Checkout do repositório
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Marcar o diretório como seguro
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Checkout dos scripts do Elavora/.github
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Elavora/.github
+          ref: ${{ inputs.automation_ref || steps.automation.outputs.job_workflow_sha }}
+          path: .elavora
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Conferir a versão da automação
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          AUTOMATION_REF: ${{ inputs.automation_ref }}
+          JOB_WORKFLOW_REF: ${{ steps.automation.outputs.job_workflow_ref }}
+          JOB_WORKFLOW_SHA: ${{ steps.automation.outputs.job_workflow_sha }}
+        with:
+          script: |
+            const { resolveAutomationRef } = require(
+              `${process.env.GITHUB_WORKSPACE}/.elavora/scripts/automation-ref.cjs`,
+            );
+            const env = process.env;
+            const oidcClaims = env.JOB_WORKFLOW_REF || env.JOB_WORKFLOW_SHA
+              ? { job_workflow_ref: env.JOB_WORKFLOW_REF, job_workflow_sha: env.JOB_WORKFLOW_SHA }
+              : null;
+            try {
+              const { ref, source } = resolveAutomationRef({ input: env.AUTOMATION_REF, oidcClaims });
+              core.info(`Versão da automação: ${ref} (${source}).`);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
+
+      - name: Decidir o modo de formatação
+        id: mode
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { formatMode } = require(`${process.env.GITHUB_WORKSPACE}/.elavora/scripts/quality.cjs`);
+            const pr = context.payload.pull_request;
+            const { mode, reason } = formatMode({
+              eventName: context.eventName,
+              headRepo: pr?.head?.repo?.full_name,
+              baseRepo: pr?.base?.repo?.full_name,
+              actor: context.actor,
+            });
+            core.info(`Modo de formatação: ${mode}${reason ? ` (${reason})` : ''}.`);
+            core.setOutput('mode', mode);
+            core.setOutput('reason', reason ?? '');
+
+      - name: Ler os scripts do Composer
+        id: scripts
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { composerScripts } = require(`${process.env.GITHUB_WORKSPACE}/.elavora/scripts/quality.cjs`);
+            const file = `${process.env.GITHUB_WORKSPACE}/composer.json`;
+            let scripts = [];
+            try {
+              scripts = composerScripts(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+            } catch (error) {
+              core.warning(error.message);
+            }
+            core.setOutput('list', JSON.stringify(scripts));
+
+      # 7. Instalação com scripts: roda a sincronização do elavora/code-standards.
+      - name: Instalar as dependências
+        id: install
+        continue-on-error: true
+        run: composer install --no-progress --prefer-dist
+
+      - name: Registrar os arquivos da sincronização
+        run: |
+          dir="$RUNNER_TEMP/elavora-quality"
+          mkdir -p "$dir"
+          git status --porcelain --untracked-files=all -- .editorconfig .php-cs-fixer.dist.php | cut -c4- > "$dir/sync.txt"
+          cat "$dir/sync.txt"
+
+      # 8. Formatação. O código de saída é guardado sem interromper o job.
+      - name: Formatar
+        id: format
+        if: steps.install.outcome == 'success'
+        run: |
+          dir="$RUNNER_TEMP/elavora-quality"
+          git diff --name-only > "$dir/before.txt"
+
+          set +e
+          if [[ -f .php-cs-fixer.php ]]; then
+            config=override
+            php-cs-fixer fix --config=.php-cs-fixer.php --no-interaction --show-progress=none
+            code=$?
+          elif [[ -f .php-cs-fixer.dist.php ]]; then
+            config=dist
+            php-cs-fixer fix --config=.php-cs-fixer.dist.php --no-interaction --show-progress=none
+            code=$?
+          else
+            config=fallback
+            php-cs-fixer fix --rules=@PER-CS --allow-risky=no --using-cache=no --no-interaction --show-progress=none .
+            code=$?
+          fi
+          set -e
+
+          git diff --name-only > "$dir/after.txt"
+          {
+            echo "config=$config"
+            echo "exit_code=$code"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Arquivos alterados pela formatação
+        id: changed
+        if: steps.format.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+          EXIT_CODE: ${{ steps.format.outputs.exit_code }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { filesChangedByFormatter } = require(`${process.env.GITHUB_WORKSPACE}/.elavora/scripts/quality.cjs`);
+            const dir = `${process.env.RUNNER_TEMP}/elavora-quality`;
+            const read = (name) => (fs.existsSync(`${dir}/${name}`) ? fs.readFileSync(`${dir}/${name}`, 'utf8') : '');
+            const lines = (text) => text.split('\n').filter((l) => l !== '');
+            const write = (name, list) => fs.writeFileSync(`${dir}/${name}`, list.map((f) => `${f}\n`).join(''));
+
+            const files = filesChangedByFormatter(read('before.txt'), read('after.txt'));
+            const syncFiles = lines(read('sync.txt'));
+            const commitFiles = [...new Set([...files, ...syncFiles])];
+            write('changed.txt', files);
+            write('commit.txt', commitFiles);
+            core.setOutput('files', JSON.stringify(files));
+            core.setOutput('sync_files', JSON.stringify(syncFiles));
+            core.setOutput('commit_count', String(commitFiles.length));
+
+            // Sem commit, o lint e os testes rodam sobre o código que está na branch. Os syncFiles ficam.
+            if (files.length > 0 && (process.env.MODE !== 'commit' || process.env.EXIT_CODE !== '0')) {
+              await exec.exec('git', ['checkout', '--', ...files]);
+            }
+
+      # 9. Commit de formatação: arquivos do PHP-CS-Fixer e syncFiles, com o GITHUB_TOKEN só neste passo.
+      - name: Commitar e enviar a formatação
+        id: push
+        if: steps.mode.outputs.mode == 'commit' && steps.format.outputs.exit_code == '0' && steps.changed.outputs.commit_count != '0'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -uo pipefail
+          dir="$RUNNER_TEMP/elavora-quality"
+          mapfile -t files < "$dir/commit.txt"
+          mapfile -t formatted < "$dir/changed.txt"
+          original="$(git rev-parse HEAD)"
+
+          for file in "${files[@]}"; do
+            git add -- "$file"
+          done
+
+          if git -c core.hooksPath=/dev/null \
+               -c user.name='github-actions[bot]' \
+               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+               commit --quiet -m 'style: organiza o código' \
+            && git -c core.hooksPath=/dev/null push "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"; then
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::o commit de formatação não pôde ser enviado; a branch pode ter andado durante a execução."
+            git reset --mixed "$original"
+            if (( ${#formatted[@]} > 0 )); then
+              git checkout -- "${formatted[@]}"
+            fi
+            exit 1
+          fi
+
+      - name: EditorConfig
+        id: editorconfig
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          if [[ ! -f .editorconfig ]]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo 'Sem .editorconfig na raiz; conferência pulada.'
+            exit 0
+          fi
+          echo 'present=true' >> "$GITHUB_OUTPUT"
+          git ls-files -z | xargs -0 editorconfig-checker
+
+      # 11. Depois da formatação e do commit: a segunda sincronização e o composer.lock nunca vão para o commit.
+      - name: Dependências mínimas
+        id: lowest
+        if: inputs.dependencies == 'lowest' && steps.install.outcome == 'success'
+        continue-on-error: true
+        run: composer update --prefer-lowest --prefer-stable --no-progress --prefer-dist
+
+      - name: Auditoria
+        id: audit
+        if: inputs.composer_audit && steps.install.outcome == 'success' && (inputs.dependencies != 'lowest' || steps.lowest.outcome == 'success')
+        continue-on-error: true
+        run: composer audit
+
+      - name: Lint
+        id: lint
+        if: steps.install.outcome == 'success' && (inputs.dependencies != 'lowest' || steps.lowest.outcome == 'success') && contains(fromJSON(steps.scripts.outputs.list), 'lint')
+        continue-on-error: true
+        run: composer lint
+
+      - name: PHPStan
+        id: analyse
+        if: steps.install.outcome == 'success' && (inputs.dependencies != 'lowest' || steps.lowest.outcome == 'success') && contains(fromJSON(steps.scripts.outputs.list), 'analyse')
+        continue-on-error: true
+        run: composer analyse
+
+      - name: Testes
+        id: test
+        if: steps.install.outcome == 'success' && (inputs.dependencies != 'lowest' || steps.lowest.outcome == 'success') && contains(fromJSON(steps.scripts.outputs.list), 'test')
+        continue-on-error: true
+        env:
+          COVERAGE: ${{ inputs.coverage_min > 0 }}
+        run: |
+          if [[ "$COVERAGE" == 'true' ]]; then
+            mkdir -p "$RUNNER_TEMP/elavora-quality"
+            XDEBUG_MODE=coverage composer test -- --coverage-clover="$RUNNER_TEMP/elavora-quality/coverage.xml"
+          else
+            composer test
+          fi
+
+      # 16 e 17. Cobertura, relatório no resumo do job e comentário fixo no PR (só no modo commit).
+      - name: Relatório
+        id: report
+        if: ${{ !cancelled() && steps.mode.outcome == 'success' && steps.scripts.outcome == 'success' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DEPENDENCIES: ${{ inputs.dependencies }}
+          COMPOSER_AUDIT: ${{ inputs.composer_audit }}
+          COVERAGE_MIN: ${{ inputs.coverage_min }}
+          MODE: ${{ steps.mode.outputs.mode }}
+          REASON: ${{ steps.mode.outputs.reason }}
+          SCRIPTS: ${{ steps.scripts.outputs.list }}
+          INSTALL: ${{ steps.install.outcome }}
+          LOWEST: ${{ steps.lowest.outcome }}
+          AUDIT: ${{ steps.audit.outcome }}
+          FORMAT_CONFIG: ${{ steps.format.outputs.config }}
+          FORMAT_EXIT: ${{ steps.format.outputs.exit_code }}
+          CHANGED: ${{ steps.changed.outputs.files }}
+          SYNC_FILES: ${{ steps.changed.outputs.sync_files }}
+          PUSH: ${{ steps.push.outcome }}
+          PUSH_SHA: ${{ steps.push.outputs.sha }}
+          EDITORCONFIG_PRESENT: ${{ steps.editorconfig.outputs.present }}
+          EDITORCONFIG: ${{ steps.editorconfig.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+          ANALYSE: ${{ steps.analyse.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          TESTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const {
+              coveragePercent, buildStages, renderReport, overallStatus, findQualityComment,
+            } = require(`${process.env.GITHUB_WORKSPACE}/.elavora/scripts/quality.cjs`);
+            const env = process.env;
+
+            const coverageMin = Number(env.COVERAGE_MIN);
+            let coverage;
+            if (coverageMin > 0) {
+              const file = `${env.RUNNER_TEMP}/elavora-quality/coverage.xml`;
+              coverage = {
+                min: coverageMin,
+                percent: coveragePercent(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''),
+              };
+            }
+
+            const stages = buildStages({
+              install: env.INSTALL,
+              dependencies: env.DEPENDENCIES,
+              lowest: env.LOWEST,
+              audit: { enabled: env.COMPOSER_AUDIT === 'true', outcome: env.AUDIT },
+              format: {
+                mode: env.MODE,
+                reason: env.REASON || null,
+                config: env.FORMAT_CONFIG || 'fallback',
+                exitCode: /^\d+$/.test(env.FORMAT_EXIT || '') ? Number(env.FORMAT_EXIT) : 1,
+                changedFiles: JSON.parse(env.CHANGED || '[]'),
+                syncFiles: JSON.parse(env.SYNC_FILES || '[]'),
+                push: env.PUSH,
+              },
+              editorconfig: { present: env.EDITORCONFIG_PRESENT === 'true', outcome: env.EDITORCONFIG },
+              scripts: JSON.parse(env.SCRIPTS || '[]'),
+              lint: env.LINT,
+              analyse: env.ANALYSE,
+              test: env.TEST,
+              coverage,
+            });
+
+            const sha = env.MODE === 'commit' && env.PUSH === 'success' && env.PUSH_SHA ? env.PUSH_SHA : env.TESTED_SHA;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = renderReport({ stages, sha, runUrl });
+            await core.summary.addRaw(body).write();
+
+            if (env.MODE === 'commit') {
+              try {
+                const { owner, repo } = context.repo;
+                const issue_number = context.payload.pull_request.number;
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number, per_page: 100,
+                });
+                const id = findQualityComment(comments);
+                if (id) {
+                  await github.rest.issues.updateComment({ owner, repo, comment_id: id, body });
+                } else {
+                  await github.rest.issues.createComment({ owner, repo, issue_number, body });
+                }
+              } catch (error) {
+                core.warning(`não foi possível escrever o comentário no PR: ${error.message}`);
+              }
+            }
+
+            core.setOutput('status', overallStatus(stages));
+
+      - name: Resultado
+        if: ${{ !cancelled() && steps.report.outputs.status == 'error' }}
+        run: |
+          echo '::error::testes com erro'
+          exit 1
