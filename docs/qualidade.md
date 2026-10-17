@@ -31,11 +31,13 @@ Cada coisa vem de um lugar:
 Exemplo: alguém abre um PR no `api-framework` com dois arquivos mal indentados.
 
 1. O workflow roda dentro da imagem `ghcr.io/elavora/php-dev:8.3-0.2.0`.
-2. Instala as dependências nas versões mínimas e roda o `composer audit`.
-3. O PHP-CS-Fixer, com a configuração do `elavora/code-standards`, corrige os dois arquivos. O workflow faz o commit
-   `style: organiza o código` na branch do PR.
-4. No mesmo job, já sobre o código corrigido, rodam o editorconfig-checker, o `composer lint`, o
-   `composer analyse` e o `composer test`, com a cobertura.
+2. Roda o `composer install`, que também sincroniza o `.editorconfig` e o `.php-cs-fixer.dist.php` com a versão
+   instalada do `elavora/code-standards`.
+3. O PHP-CS-Fixer, com a configuração do pacote, corrige os dois arquivos. O workflow faz o commit
+   `style: organiza o código` na branch do PR, junto com os arquivos que a sincronização tiver alterado.
+4. No mesmo job, já sobre o código corrigido, roda o editorconfig-checker. Depois o workflow troca as dependências
+   pelas versões mínimas e roda o `composer audit`, o `composer lint`, o `composer analyse` e o `composer test`, com
+   a cobertura.
 5. O PR recebe (ou tem atualizado) um comentário como este:
 
    > **Qualidade: testes rodaram ok**
@@ -102,34 +104,36 @@ As regras não ficam neste repositório. Elas são o pacote Composer `elavora/co
 (repositório `Elavora/code-standards`), instalado no `require-dev` de cada projeto. Assim, o Dependabot atualiza
 as regras como qualquer outra dependência.
 
-**Dependência explícita:** este workflow segue o contrato do `elavora/code-standards` **1.0.0**. Os nomes abaixo
-marcados como *provisórios* ainda dependem da especificação daquele pacote e devem ser conferidos com ela antes
-da implementação:
+**Dependência explícita:** este workflow segue o contrato do `elavora/code-standards` **1.0.0**, descrito em
+`docs/integracao-ci.md` daquele repositório. Os itens que o workflow usa:
 
-| Item | Nome | Situação |
-| --- | --- | --- |
-| Pacote | `elavora/code-standards`, no `require-dev`, versão `^1.0` | definido |
-| Configuração do PHP-CS-Fixer | `Elavora\CodeStandards\PhpCsFixer::config()`, que devolve um `PhpCsFixer\ConfigInterface` com `@PER-CS` | provisório |
-| Comando que copia o `.editorconfig` para a raiz | `vendor/bin/elavora-standards sync` | provisório |
+| Item | Valor |
+| --- | --- |
+| Pacote | `elavora/code-standards`, no `require-dev`, versão `^1.0` |
+| Configuração do PHP-CS-Fixer | `Elavora\CodeStandards\PhpCsFixer::config(string $dir)`, em `vendor/elavora/code-standards/src/PhpCsFixer.php` |
+| Sincronização automática | callback `Elavora\CodeStandards\Composer::sync` em `post-install-cmd` e `post-update-cmd` do `composer.json` do projeto |
+| Comando de sincronização | `vendor/bin/elavora-standards sync` |
+| Arquivos que a sincronização pode criar ou alterar | só `.editorconfig` e `.php-cs-fixer.dist.php`, na raiz |
 
-O pacote não exige `friendsofphp/php-cs-fixer`: o binário vem da imagem.
+O pacote não exige `friendsofphp/php-cs-fixer`: o binário vem da imagem. A adoção é `composer require --dev
+elavora/code-standards:^1.0`, com o callback nos dois eventos do `composer.json`. O primeiro `composer install`
+cria os dois arquivos, que são commitados.
 
 No repositório que adota o pacote:
 
-- `.php-cs-fixer.dist.php` (versionado) é um stub que carrega a configuração do vendor. Com os nomes provisórios:
+- `.php-cs-fixer.dist.php` (versionado) é o stub que a sincronização cria. Ele carrega só o arquivo da classe, e não
+  o `vendor/autoload.php`, para não misturar as dependências do projeto com as do PHAR do PHP-CS-Fixer:
 
   ```php
   <?php
 
-  declare(strict_types=1);
+  require_once __DIR__ . '/vendor/elavora/code-standards/src/PhpCsFixer.php';
 
-  require __DIR__ . '/vendor/autoload.php';
-
-  return Elavora\CodeStandards\PhpCsFixer::config();
+  return Elavora\CodeStandards\PhpCsFixer::config(__DIR__);
   ```
 
-- `.editorconfig` (versionado) é a cópia que o comando do pacote grava na raiz. O editor e o editorconfig-checker
-  só leem o `.editorconfig` que está na árvore do projeto.
+- `.editorconfig` (versionado) traz o bloco que a sincronização mantém, entre `# >>> elavora/code-standards >>>` e
+  `# <<< elavora/code-standards <<<`. O editor e o editorconfig-checker só leem o `.editorconfig` da árvore do projeto.
 - `.php-cs-fixer.php` (fora do git) é um override pessoal opcional, que parte do stub:
 
   ```php
@@ -148,12 +152,15 @@ No repositório que adota o pacote:
 
 | Arquivo | Comando | Observação no relatório |
 | --- | --- | --- |
-| `.php-cs-fixer.php` | `php-cs-fixer fix --config=.php-cs-fixer.php ...` | nenhuma (na prática não existe no CI, porque fica fora do git) |
-| `.php-cs-fixer.dist.php` | `php-cs-fixer fix --config=.php-cs-fixer.dist.php ...` | nenhuma |
-| nenhum dos dois | `php-cs-fixer fix --rules=@PER-CS --allow-risky=no ... .` | aviso: o repositório não adotou o `elavora/code-standards` |
+| `.php-cs-fixer.php` | `php-cs-fixer fix --config=.php-cs-fixer.php --no-interaction --show-progress=none` | nenhuma (na prática não existe no CI, porque fica fora do git) |
+| `.php-cs-fixer.dist.php` | `php-cs-fixer fix --config=.php-cs-fixer.dist.php --no-interaction --show-progress=none` | nenhuma |
+| nenhum dos dois | `php-cs-fixer fix --rules=@PER-CS --allow-risky=no --using-cache=no --no-interaction --show-progress=none .` | aviso: o repositório não adotou o `elavora/code-standards` |
 
-É a mesma ordem do PHP-CS-Fixer e da extensão do VS Code. O stub depende do `vendor/autoload.php`, por isso a
-formatação roda depois do `composer install`.
+É a mesma ordem do PHP-CS-Fixer e da extensão do VS Code. Com um arquivo de configuração, o workflow não passa
+`--rules`, `--allow-risky` nem `--using-cache`, porque eles substituiriam o que a configuração do pacote define.
+
+A escolha acontece **depois** do `composer install`: o stub depende de `vendor/elavora/code-standards/`, e a
+sincronização pode ter acabado de criar o `.php-cs-fixer.dist.php`.
 
 **EditorConfig:** com `.editorconfig` na raiz, o editorconfig-checker roda. Sem ele, a conferência é pulada e o
 relatório mostra um aviso de que o repositório não adotou o `elavora/code-standards`. O workflow não usa um
@@ -253,43 +260,52 @@ Grupo `elavora-quality-${{ github.repository }}-${{ github.event.pull_request.nu
 5. **Decidir o modo de formatação** com `formatMode` (ver [Referência](#referência-scriptsqualitycjs)): `commit` ou
    `report`, e o motivo.
 6. **Ler os scripts do Composer** com `composerScripts` sobre o `composer.json`.
-7. **Instalar as dependências**, sem interromper o job em caso de falha:
-   - `dependencies: lowest`: `composer update --prefer-lowest --prefer-stable --no-progress --prefer-dist`;
-   - `dependencies: install`: `composer install --no-progress --prefer-dist`.
-
-   O `composer update` pode alterar o `composer.lock` na pasta de trabalho. Essa alteração nunca é commitada
-   (ver passo 9).
-8. **Auditoria** (só com `composer_audit: true` e a instalação concluída): `composer audit`.
-9. **Formatar**:
-   - guarda a lista dos arquivos versionados já alterados antes da formatação (`git diff --name-only`), como o
-     `composer.lock` do passo 7;
+7. **Instalar as dependências** com `composer install --no-progress --prefer-dist`, **com scripts**, sem
+   interromper o job em caso de falha. É essa instalação que roda a sincronização do `elavora/code-standards`
+   (`Elavora\CodeStandards\Composer::sync`) e pode criar ou alterar o `.editorconfig` e o `.php-cs-fixer.dist.php`.
+   Logo depois, o workflow registra quais desses dois arquivos aparecem alterados ou novos no `git status`
+   (`syncFiles`).
+8. **Formatar** (só com o passo 7 concluído):
+   - guarda a lista dos arquivos versionados já alterados antes da formatação (`git diff --name-only`), que inclui
+     os `syncFiles` já versionados;
    - escolhe a configuração (ver [Como o workflow escolhe a configuração](#como-o-workflow-escolhe-a-configuração))
-     e roda o `php-cs-fixer fix` com `--using-cache=no --no-interaction --show-progress=none`, guardando o código de
-     saída sem interromper o job;
+     e roda o `php-cs-fixer fix`, guardando o código de saída sem interromper o job;
    - calcula os arquivos alterados pela formatação com `filesChangedByFormatter(antes, depois)`;
    - se o modo é `report` ou o código de saída não é 0, desfaz só esses arquivos (`git checkout -- <arquivos>`).
-     Assim, o lint e os testes rodam sobre o código que está na branch.
-10. **Commitar e enviar** (só quando o modo é `commit`, o código de saída é 0 e há arquivos alterados pela
-    formatação): ver [Commit de formatação](#commit-de-formatação). Se o push falhar, o job continua: o commit local é
-    desfeito (`git reset --mixed <sha original>`) e os arquivos formatados voltam ao original
-    (`git checkout -- <arquivos>`).
-11. **EditorConfig**: com `.editorconfig` na raiz, roda `git ls-files -z | xargs -0 editorconfig-checker` a partir da
-    raiz, sem interromper o job. Só os arquivos versionados são conferidos, então `vendor/` e `.elavora/` ficam de
-    fora. Um `.editorconfig-checker.json` na raiz (o arquivo de configuração da v4; o `.ecrc` não é mais lido) é
-    respeitado, por exemplo para excluir arquivos gerados. Sem `.editorconfig`, o passo não roda.
-12. **Lint** (só com a instalação concluída e o script `lint` no `composer.json`): `composer lint`.
-13. **PHPStan** (só com a instalação concluída e o script `analyse`): `composer analyse`.
-14. **Testes** (só com a instalação concluída e o script `test`):
+     Assim, o lint e os testes rodam sobre o código que está na branch. Os `syncFiles` continuam na pasta de
+     trabalho, sem commit.
+9. **Commitar e enviar** (só quando o modo é `commit`, o código de saída é 0 e há arquivos alterados pela formatação
+   ou `syncFiles`): ver [Commit de formatação](#commit-de-formatação). Se o push falhar, o job continua: o commit
+   local é desfeito (`git reset --mixed <sha original>`) e os arquivos formatados voltam ao original
+   (`git checkout -- <arquivos>`). Os `syncFiles` continuam na pasta de trabalho.
+10. **EditorConfig**: com `.editorconfig` na raiz, roda `git ls-files -z | xargs -0 editorconfig-checker` a partir da
+    raiz, sem interromper o job. A árvore já está sincronizada, então a conferência usa as regras da versão
+    instalada do pacote. Só os arquivos versionados são conferidos, e `vendor/` e `.elavora/` ficam de fora. Um
+    `.editorconfig` criado agora pela sincronização ainda não é versionado, mas vale como regra. Um
+    `.editorconfig-checker.json` na raiz (o arquivo de configuração da v4; o `.ecrc` não é mais lido) é respeitado,
+    por exemplo para excluir arquivos gerados. Sem `.editorconfig`, o passo não roda.
+11. **Dependências mínimas** (só com `dependencies: lowest` e o passo 7 concluído):
+    `composer update --prefer-lowest --prefer-stable --no-progress --prefer-dist`, sem interromper o job. Ela roda
+    depois da formatação e do commit de propósito. A sincronização roda de novo com a versão mínima do pacote e
+    pode reescrever os dois arquivos com regras mais antigas, e essas mudanças, assim como o `composer.lock`
+    alterado, nunca vão para o commit. Daqui em diante, nenhum passo usa esses arquivos.
+12. **Auditoria** (só com `composer_audit: true` e a instalação concluída): `composer audit`, sobre as dependências
+    que serão testadas.
+13. **Lint** (só com a instalação concluída e o script `lint` no `composer.json`): `composer lint`.
+14. **PHPStan** (só com a instalação concluída e o script `analyse`): `composer analyse`.
+15. **Testes** (só com a instalação concluída e o script `test`):
     - `coverage_min` igual a `0`: `composer test`;
     - `coverage_min` maior que `0`: `XDEBUG_MODE=coverage composer test -- --coverage-clover=<temporário>/coverage.xml`.
       Isso exige que o script `test` chame o PHPUnit diretamente, para receber os argumentos extras.
-15. **Cobertura** (só com `coverage_min` maior que `0`): lê o relatório com `coveragePercent`.
-16. **Relatório** (sempre, mesmo com falhas anteriores): monta as etapas com `buildStages` e o texto com
+16. **Cobertura** (só com `coverage_min` maior que `0`): lê o relatório com `coveragePercent`.
+17. **Relatório** (sempre, mesmo com falhas anteriores): monta as etapas com `buildStages` e o texto com
     `renderReport`, e o grava no resumo do job (`$GITHUB_STEP_SUMMARY`). Quando o modo é `commit`, cria ou atualiza o
     comentário fixo no PR (ver [Comentário fixo](#comentário-fixo-no-pr)).
-17. **Resultado**: se `overallStatus` for `error`, o job falha com a mensagem `testes com erro`.
+18. **Resultado**: se `overallStatus` for `error`, o job falha com a mensagem `testes com erro`.
 
-Os passos 7, 8, 11, 12, 13 e 14 não interrompem o job quando falham: o resultado de cada um vai para o relatório.
+Nos passos acima, "a instalação concluída" significa o passo 7 concluído e, com `dependencies: lowest`, também o
+passo 11. Os passos 7, 8, 10, 11, 12, 13, 14 e 15 não interrompem o job quando falham: o resultado de cada um vai
+para o relatório.
 
 ### Modo de formatação: commit ou aviso
 
@@ -315,8 +331,11 @@ há PR (push), e o resultado fica só no resumo do job.
   persiste credenciais. Não há secret nem GitHub App.
 - **Mensagem:** exatamente `style: organiza o código`, sem corpo. Todo commit automático da Elavora segue a mesma
   regra dos commits feitos por pessoas: português do Brasil e Conventional Commits.
-- **Conteúdo:** só os arquivos que o PHP-CS-Fixer alterou, adicionados um a um (`git add -- <arquivos>`). O
-  `composer.lock` alterado pelo `composer update`, `vendor/`, `.elavora/` e qualquer arquivo novo nunca entram.
+- **Conteúdo:** os arquivos que o PHP-CS-Fixer alterou e os `syncFiles` (o `.editorconfig` e o
+  `.php-cs-fixer.dist.php` que a sincronização do `composer install` criou ou alterou), adicionados um a um
+  (`git add -- <arquivos>`). Eles entram porque fazem parte da correção automática: sem eles, a branch ficaria com
+  regras diferentes das que o CI usou. O `composer.lock`, `vendor/`, `.elavora/` e qualquer outro arquivo nunca
+  entram, nem as mudanças da segunda sincronização (passo 11).
 - **Envio:** `git -c core.hooksPath=/dev/null push "https://x-access-token:${GITHUB_TOKEN}@github.com/<owner>/<repo>.git" HEAD:refs/heads/<branch do PR>`,
   sem `--force`. Os hooks ficam desligados porque o código do repositório e das dependências já rodou nos passos
   anteriores e poderia ter instalado um hook. Se a branch andou durante a execução, o push é recusado e a etapa
@@ -427,17 +446,19 @@ Exemplo: `<project><file name="a.php"><metrics statements="10" coveredstatements
 ### `buildStages(input)`
 
 Monta a lista de etapas do relatório. Cada etapa é `{ id, name, status, detail }`, e a de formatação também tem
-`files` (o array de arquivos, igual a `changedFiles`). `status` é uma das chaves de `STATUS_LABELS`.
+`files`: os `changedFiles`, seguidos dos `syncFiles` que ainda não estão neles. `status` é uma das chaves de
+`STATUS_LABELS`.
 
 Entrada:
 
 ```js
 {
-  install: 'success',
+  install: 'success',                // resultado do passo 7 (composer install)
   dependencies: 'lowest',            // opcional; padrão 'lowest'
+  lowest: 'success',                 // resultado do passo 11; só conta com dependencies 'lowest'
   audit: { enabled: true, outcome: 'success' },  // opcional; ausente = desligada
-  format: { mode, reason, config, exitCode, changedFiles, push },
-  // config: 'override' | 'dist' | 'fallback'; push: resultado do passo 10
+  format: { mode, reason, config, exitCode, changedFiles, syncFiles, push },
+  // config: 'override' | 'dist' | 'fallback'; syncFiles: opcional, padrão []; push: resultado do passo 9
   editorconfig: { present: true, outcome: 'success' },
   scripts: ['lint', 'test', 'analyse'],
   lint: 'success',
@@ -447,9 +468,9 @@ Entrada:
 }
 ```
 
-Os resultados (`outcome`, `install`, `lint`, `analyse`, `test`, `push`) são os do GitHub Actions: `success`,
-`failure`, `skipped` ou `cancelled`. Nas regras abaixo, "instalação concluída" significa `install` igual a
-`success`.
+Os resultados (`outcome`, `install`, `lowest`, `lint`, `analyse`, `test`, `push`) são os do GitHub Actions:
+`success`, `failure`, `skipped` ou `cancelled`. Nas regras abaixo, "instalação concluída" significa `install` igual a
+`success` e, com `dependencies` `lowest`, também `lowest` igual a `success`.
 
 Ordem e nomes das etapas, que é a ordem de execução. As opcionais só entram na lista quando estão ligadas:
 
@@ -464,17 +485,20 @@ Ordem e nomes das etapas, que é a ordem de execução. As opcionais só entram 
 | `test` | `Testes (composer test)` | sempre |
 | `coverage` | `Cobertura` | só com `coverage.min` maior que `0` |
 
-Regras de cada etapa: avaliadas na ordem, vale a primeira que casar. Quando a etapa deveria ter rodado e o
-resultado não é `success`, `failure` nem `skipped` (por exemplo `cancelled`), ela vira `error` com o detalhe
-`etapa não concluída (<resultado>)`.
+Regras de cada etapa: avaliadas na ordem, vale a primeira que casar. Quando a etapa deveria ter rodado (a
+instalação terminou e, quando é o caso, o script existe) e o resultado não é `success` nem `failure`, ela vira
+`error` com o detalhe `etapa não concluída (<resultado>)`. Isso vale também para `skipped`
+(`etapa não concluída (skipped)`) e para `cancelled`. Um passo que deveria ter rodado e não rodou nunca aparece
+como `ok` nem como `pulado`, para não esconder uma falha do workflow.
 
 **`install`**
 
 | Condição | `status` | `detail` |
 | --- | --- | --- |
-| `success` e `dependencies` `lowest` | `ok` | `dependências mínimas instaladas (--prefer-lowest)` |
-| `success` e `dependencies` `install` | `ok` | `dependências instaladas` |
-| `failure` ou `skipped` | `error` | `a instalação das dependências falhou; veja o log` |
+| `install` `failure` ou `skipped` | `error` | `a instalação das dependências falhou; veja o log` |
+| `install` `success` e `dependencies` `install` | `ok` | `dependências instaladas` |
+| `install` `success`, `dependencies` `lowest` e `lowest` `success` | `ok` | `dependências mínimas instaladas (--prefer-lowest)` |
+| `install` `success`, `dependencies` `lowest` e `lowest` `failure` ou `skipped` | `error` | `a instalação das dependências mínimas falhou; veja o log` |
 
 **`audit`**
 
@@ -483,13 +507,15 @@ resultado não é `success`, `failure` nem `skipped` (por exemplo `cancelled`), 
 | instalação não concluída | `skipped` | `dependências não instaladas` |
 | `outcome` `success` | `ok` | `nenhum problema encontrado` |
 | `outcome` `failure` | `error` | `o composer audit encontrou problemas; veja o log` |
+| `outcome` `skipped` | `error` | `etapa não concluída (skipped)` |
 
-**`format`** (`<n>` é o número de arquivos em `changedFiles`)
+**`format`** (`<n>` é o número de arquivos em `files`, ou seja, `changedFiles` mais `syncFiles` sem repetição)
 
 | Condição | `status` | `detail` |
 | --- | --- | --- |
+| `install` diferente de `success` (o passo 8 não rodou) | `skipped` | `dependências não instaladas` |
 | `exitCode` diferente de `0` | `error` | `o PHP-CS-Fixer falhou (código <exitCode>); veja o log` |
-| `changedFiles` vazio | `ok` | `o código já estava formatado` |
+| `files` vazio | `ok` | `o código já estava formatado` |
 | `mode` `commit` e `push` `success` | `fixed` | `<n> arquivo(s) corrigido(s) no commit "style: organiza o código"` |
 | `mode` `commit` e `push` diferente de `success` | `warning` | `<n> arquivo(s) precisam de formatação; o commit não pôde ser enviado (veja o log)` |
 | `mode` `report` | `warning` | `<n> arquivo(s) precisam de formatação; sem commit automático em <motivo>` |
@@ -503,7 +529,9 @@ a tabela acima:
 - `ok` e `fixed` viram `warning`; `warning` e `error` continuam como estão;
 - o `detail` ganha no fim o texto `; sem .php-cs-fixer.dist.php, usado @PER-CS puro (o repositório não adotou o elavora/code-standards)`.
 
-Exemplo: `fallback` com `changedFiles` vazio → `warning`, `o código já estava formatado; sem .php-cs-fixer.dist.php, usado @PER-CS puro (o repositório não adotou o elavora/code-standards)`.
+A regra do `fallback` não se aplica à linha `skipped`.
+
+Exemplo: `fallback` com `files` vazio → `warning`, `o código já estava formatado; sem .php-cs-fixer.dist.php, usado @PER-CS puro (o repositório não adotou o elavora/code-standards)`.
 
 **`editorconfig`**
 
@@ -512,6 +540,7 @@ Exemplo: `fallback` com `changedFiles` vazio → `warning`, `o código já estav
 | `present` `false` | `warning` | `sem .editorconfig na raiz; conferência pulada (o repositório não adotou o elavora/code-standards)` |
 | `outcome` `success` | `ok` | `sem problemas` |
 | `outcome` `failure` | `error` | `arquivos fora das regras do .editorconfig; veja o log` |
+| `outcome` `skipped` | `error` | `etapa não concluída (skipped)` |
 
 **`lint`** e **`analyse`** (`<script>` é `lint` ou `analyse`)
 
@@ -521,6 +550,7 @@ Exemplo: `fallback` com `changedFiles` vazio → `warning`, `o código já estav
 | `<script>` fora de `scripts` | `skipped` | `sem o script "<script>" no composer.json` |
 | `success` | `ok` | `sem problemas` |
 | `failure` | `error` | `falhou; veja o log` |
+| `skipped` | `error` | `etapa não concluída (skipped)` |
 
 **`test`**
 
@@ -530,6 +560,7 @@ Exemplo: `fallback` com `changedFiles` vazio → `warning`, `o código já estav
 | `test` fora de `scripts` | `error` | `sem o script "test" no composer.json` |
 | `success` | `ok` | `testes passaram` |
 | `failure` | `error` | `testes falharam; veja o log` |
+| `skipped` | `error` | `etapa não concluída (skipped)` |
 
 Um repositório sem `composer test` fica com erro de propósito: sem ele não dá para dizer que os testes rodaram.
 

@@ -163,7 +163,13 @@ Lança `Error` com uma mensagem que contém `PACKAGIST_WEBHOOK_URL` quando:
 
 ### `notifyPackagist({ repository, webhookUrl, fetchImpl = fetch, sleep })`
 
-- `repository` precisa casar com `^Elavora/api-[a-z0-9-]+$`. Senão, lança `Error` antes de qualquer requisição.
+- `repository` precisa casar com `^Elavora/(api-[a-z0-9-]+|code-standards)$`: os pacotes `api-*` e o
+  `Elavora/code-standards`, que também é um pacote Composer. Senão, lança `Error` antes de qualquer requisição.
+  - Válidos: `Elavora/api-framework`, `Elavora/api-cache-redis2`, `Elavora/code-standards`.
+  - Inválidos, além dos de antes (`elavora/api-framework`, `Outra/api-framework`, `Elavora/api-Framework`,
+    `Elavora/api-`, `Elavora/api-framework/x`, a URL `https://github.com/Elavora/api-framework`):
+    `elavora/code-standards`, `Elavora/Code-Standards`, `Outra/code-standards`, `Elavora/code-standards-x`,
+    `Elavora/code-standards/x`, `Elavora/xcode-standards` e `Elavora/devcontainers`.
 - O secret é validado com `credentials` antes de qualquer requisição. Com secret inválido ou ausente, a função
   rejeita com o mesmo `Error` de `credentials` (mensagem com `PACKAGIST_WEBHOOK_URL`) e `fetchImpl` nunca é chamado.
 - Envia `POST https://packagist.org/api/update-package` com:
