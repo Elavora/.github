@@ -172,11 +172,16 @@ function renderReleaseNotes({
   if (!Array.isArray(pulls)) throw new TypeError('pulls precisa ser um array');
   pulls.forEach(assertPull);
   if (!isStringArray(betas)) throw new TypeError('betas precisa ser um array de strings');
+  for (const name of betas) {
+    if (parseNewTag(name, 'cada beta').beta === null) throw new TypeError('cada beta precisa ser X.Y.Z-beta.N');
+  }
 
   const stable = current.beta === null;
   const start = previousTag || null;
   const stableName = previousStable || null;
-  const prev = stableName ? parseTag(stableName) : null;
+  // Vazia, não reconhecida ou beta: conta como "sem estável anterior".
+  const parsedStable = stableName ? parseTag(stableName) : null;
+  const prev = parsedStable && parsedStable.beta === null ? parsedStable : null;
 
   // Resumo e linha "desde".
   let jump = null;
@@ -242,7 +247,7 @@ function renderReleaseNotes({
 
   const tail = [];
   if (contributors.length) tail.push('## Contribuidores', contributors.map((c) => `- ${c.link}`).join('\n'));
-  const previous = stable ? stableName : start;
+  const previous = stable ? (prev && stableName) : start;
   tail.push(previous
     ? `**Comparação completa:** [\`${previous}...${tag}\`](https://github.com/${repository}/compare/${previous}...${tag})`
     : `**Histórico completo:** [commits até \`${tag}\`](https://github.com/${repository}/commits/${tag})`);
