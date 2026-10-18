@@ -6,14 +6,17 @@ Quando um pull request é integrado na `main`, esse chamador aciona o workflow r
 `Elavora/.github/.github/workflows/release.yml`, que:
 
 1. calcula a nova versão a partir das tags e das labels do PR (regras em [versionamento.md](versionamento.md));
-2. cria a tag e a GitHub Release;
+2. cria a tag e a GitHub Release, com título padronizado e notas em português geradas a partir dos PRs (regras em
+   [notas-de-release.md](notas-de-release.md));
 3. envia o evento `repository_dispatch` `tag-created` para o próprio repositório;
 4. nos pacotes Composer, pede ao Packagist que atualize o pacote.
 
 ## Versionamento do próprio `.github`
 
 O `.github` é versionado pelo mesmo fluxo, e os consumidores fixam uma versão dele no `uses`
-(`Elavora/.github/.github/workflows/release.yml@1.1.0`): uma tag estável, recomendada, ou um SHA completo.
+(`Elavora/.github/.github/workflows/release.yml@1.2.0`): uma tag estável, recomendada, ou um SHA completo.
+As notas de release em português começam na `1.2.0`: um chamador ainda na `1.1.0` continua com as notas automáticas
+do GitHub.
 
 A partir da `1.1.0`, a entrada `automation_ref` é opcional. Sem ela, o workflow descobre a própria versão pelo
 token OIDC (claim `job_workflow_sha`), e o chamador concede `id-token: write`. Com ela, o comportamento é o da
@@ -29,7 +32,7 @@ Só `workflow_call`. Ele espera ser chamado a partir de um evento `pull_request`
 | Entrada | Tipo | Obrigatória | Padrão | Uso |
 | --- | --- | --- | --- | --- |
 | `automation_ref` | string | não | `''` (descobre pelo OIDC) | versão do `.github` (tag ou SHA) usada para baixar os scripts; ver [versao-da-automacao.md](versao-da-automacao.md) |
-| `package_name` | string | não | nome do repositório (`github.repository`) | aparece no título da release |
+| `package_name` | string | não | `''` | **ignorada a partir da `1.2.0`**. Até a `1.1.0` definia o título da release; continua aceita só para não quebrar os chamadores que a passam (ver [notas-de-release.md](notas-de-release.md#título-da-release)) |
 | `packagist` | boolean | não | `true` | pede a atualização do Packagist depois da release |
 
 | Secret | Obrigatório | Uso |
@@ -87,10 +90,14 @@ os seus commits. No exemplo, ficam as tags de A e de C, e não existe tag aponta
 5. Cria a tag (`refs/tags/<tag>`) apontando para o `merge_commit_sha` do PR. Isso vale também para a promoção de
    uma beta: a estável inclui o que veio no PR com `release`.
 6. Cria a GitHub Release, se ainda não existir uma para essa tag:
-   - título: `<package_name> <tag>` (exemplo: `elavora/api-framework 1.2.0`);
+   - título: `releaseTitle({ repository: github.repository, tag })` de `scripts/release-notes.cjs`, no formato
+     `<owner>/<repo> <tag>` (exemplo: `Elavora/api-framework 1.2.0`);
+   - corpo: `renderReleaseNotes(...)` do mesmo script, com os PRs do [intervalo das notas](#intervalo-das-notas);
    - `prerelease: true` para beta e `false` para estável;
    - `make_latest: true` só para estável;
-   - notas geradas pelo GitHub (`generate_release_notes: true`).
+   - sem `generate_release_notes`: as notas automáticas do GitHub deixam de ser usadas.
+
+   Se a release já existe, ela é reaproveitada como está: título e corpo não são alterados.
 7. Envia `repository_dispatch` com `event_type: tag-created` e
    `client_payload: { tag, release_id, prerelease }`, que os workflows do repositório usam para publicar artefatos
    da versão (exemplo: a imagem do `devcontainers`).
@@ -105,9 +112,12 @@ os seus commits. No exemplo, ficam as tags de A e de C, e não existe tag aponta
 2. **Commits**: `git rev-list --first-parent <tag de partida>..<merge_commit_sha>` (ou só `<merge_commit_sha>` sem
    tag de partida). O `--first-parent` pega um commit por PR em merge commit, e todos os commits em squash e rebase.
 3. **PRs**: para cada commit, os PRs associados pela API (`GET /repos/{owner}/{repo}/commits/{sha}/pulls`), mantendo
-   só os que foram integrados (`merged_at` preenchido) com base `main`, sem repetir número.
-4. **PR do evento**: entra sempre, com as labels do payload do evento, mesmo que a API não o devolva. Se a API
-   também o devolver, valem as labels do payload.
+   só os que foram integrados (`merged_at` preenchido) com base `main`, sem repetir número. De cada PR ficam o
+   número, as labels, o título, o link (`html_url`), o login do autor (`user.login`, ou `null` sem usuário), o corpo
+   (`body`) e a lista dos commits do passo 2 pelos quais ele foi encontrado (`commits`).
+4. **PR do evento**: entra sempre, com os dados do payload do evento (labels, título, link, autor e corpo), mesmo que
+   a API não o devolva. Se a API também o devolver, valem os dados do payload. O `merge_commit_sha` sempre está nos
+   `commits` dele.
 5. **Labels agregadas**: `aggregateLabels(pulls)`, de `scripts/release-version.cjs` (ver
    [versionamento.md](versionamento.md#funções-exportadas)). Vale a maior label entre todos os PRs, e `release` em
    qualquer um deles gera estável.
@@ -121,6 +131,42 @@ tem `upgrade` ou `release` antes de adotar.
 Exemplo: a última tag é `1.1.1`. Depois dela entraram o #10 (`bug`, execução concluída e tag `1.1.2-beta.1`),
 o #11 (`upgrade`, execução cancelada) e o #12 (`documentation`). A execução do #12 parte de `1.1.2-beta.1`,
 enxerga o #11 e o #12, agrega `upgrade` e `documentation` e gera `2.0.0-beta.1`, apontando para o merge do #12.
+
+### Intervalo das notas
+
+Os PRs listados no corpo da release (ver [notas-de-release.md](notas-de-release.md)) dependem da estabilidade da
+nova versão:
+
+- **Beta**: são os PRs do [intervalo de PRs](#intervalo-de-prs), desde a tag de partida. `previousTag` é a tag de
+  partida (ou `null`) e `betas` é `[]`.
+- **Estável**: são os PRs desde a **estável anterior**, a maior tag estável reconhecida (inclusive a legada
+  `vX.Y.Z`) que aponta para um ancestral do merge. A coleta segue os passos 2 a 4 acima, com a estável anterior no
+  lugar da tag de partida. Assim entram também os PRs que já saíram nas betas.
+  - `betas`: as tags beta do formato novo cuja base é maior que a da estável anterior (qualquer uma, sem estável
+    anterior) e que apontam para um ancestral do merge.
+  - Para cada beta, `commits` = `git rev-list --first-parent <estável anterior>..<commit da beta>` (ou só
+    `<commit da beta>`, sem estável anterior). Os PRs passam por `assignIntroducedIn({ pulls, betas })` para ganhar
+    o `introducedIn`.
+  - `renderReleaseNotes` recebe a lista de nomes das betas.
+
+O cálculo da versão **não muda**: as labels agregadas continuam vindo só do intervalo desde a tag de partida. O
+intervalo das notas serve só para o corpo da release.
+
+Exemplo, continuando o de cima: depois de `2.0.0-beta.1`, o #13 (`bug`, `release`) gera `2.0.0`. O intervalo da
+versão é só o #13, desde a `2.0.0-beta.1`. O intervalo das notas vai desde a `1.1.1` e lista o #10 (entrou na
+`1.1.2-beta.1`), o #11 e o #12 (entraram na `2.0.0-beta.1`) e o #13 (novo nesta versão).
+
+**Custo**: na estável, a coleta faz uma chamada à API por commit desde a estável anterior, e um `git rev-list` por
+beta. Os commits do intervalo da versão já levantados podem ser reaproveitados.
+
+Os dados completos dos PRs, com o corpo, não passam por `outputs` nem por variáveis de ambiente de um passo para o
+outro (o corpo de um PR pode ser grande). Eles vão num arquivo JSON em `$RUNNER_TEMP`, lido pelo passo que cria a
+release. A saída `pulls` do passo do intervalo continua com `{ number, labels }`, para o resumo.
+
+**Reaproveitamento (passo 3)**: quando a tag já existe e a release também, nada é gerado. Quando a tag existe e a
+release não (a release tinha falhado), as notas são geradas como acima, tratando a tag reaproveitada como a nova:
+ela fica fora da escolha da tag de partida, da estável anterior e das betas, e a estabilidade vem do próprio nome
+da tag.
 
 Tags criadas com o `GITHUB_TOKEN` não disparam `push: tags` nem `release: published` em outros workflows. Por isso
 o fluxo usa `repository_dispatch` e faz a notificação ao Packagist no próprio workflow.
@@ -213,21 +259,19 @@ jobs:
       contents: write
       pull-requests: read
       id-token: write
-    uses: Elavora/.github/.github/workflows/release.yml@1.1.0
-    with:
-      package_name: elavora/api-framework
+    uses: Elavora/.github/.github/workflows/release.yml@1.2.0
     secrets:
       PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
 ```
 
-Troque `1.1.0` pela versão estável atual do `.github` e `package_name` pelo `name` do `composer.json` do
-repositório. A versão aparece uma vez só, no `uses`, e o Dependabot consegue atualizá-la. Um chamador da `1.0.0`
-(com `automation_ref` e sem `id-token: write`) continua funcionando, desde que `automation_ref` e `uses` tenham o
-mesmo valor.
+Troque `1.2.0` pela versão estável atual do `.github`. A versão aparece uma vez só, no `uses`, e o Dependabot
+consegue atualizá-la. Um chamador da `1.0.0` (com `automation_ref` e sem `id-token: write`) continua funcionando,
+desde que `automation_ref` e `uses` tenham o mesmo valor. Um chamador que ainda passa `package_name` também
+continua funcionando: a entrada é ignorada a partir da `1.2.0` e pode ser removida.
 
 ### `devcontainers`
 
-Igual ao dos pacotes, mas com `package_name: elavora/devcontainers`, `packagist: false` e sem o bloco `secrets`.
+Igual ao dos pacotes, mas com `with: { packagist: false }` e sem o bloco `secrets`.
 
 ### `.github`
 
@@ -253,7 +297,6 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       automation_ref: ${{ github.event.pull_request.merge_commit_sha }}
-      package_name: Elavora/.github
       packagist: false
 ```
 
