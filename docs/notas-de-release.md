@@ -203,12 +203,21 @@ Exemplos:
 - `0.0.1-beta.1` sem nenhuma tag → `Mudanças desde o início do projeto. Ainda não há versão estável.`
 
 Na estável, a tag de partida (`previousTag`) não é usada. A "estável anterior" desta linha e do salto é a mesma:
-uma `previousStable` que `parseTag` não reconhece conta como "sem estável anterior" nos dois lugares.
+uma `previousStable` vazia (`''`), que `parseTag` não reconhece ou que é uma beta (`'1.1.0-beta.2'`) conta como "sem
+estável anterior" no resumo, na linha "desde" e na linha de comparação (ver
+[Termos usados nesta página](#termos-usados-nesta-página)). Uma `previousTag` vazia conta como "sem tag de partida".
+
+Exemplo: `1.0.0` com `previousStable: '1.0.0-beta.3'` → resumo `Versão estável **1.0.0**.`, linha "desde"
+`Primeira versão estável; mudanças desde o início do projeto.` e última linha
+``**Histórico completo:** [commits até `1.0.0`](https://github.com/<owner>/<repo>/commits/1.0.0)``.
 
 ### Linha das betas
 
-Só na estável, quando a lista de betas não está vazia. As betas aparecem em ordem crescente de versão, entre
-crases, unidas em português (`a`, `a e b`, `a, b e c`):
+Só na estável, quando a lista de betas não está vazia. As betas aparecem em ordem crescente de versão (base e
+depois `N`, numericamente), entre crases, unidas em português (`a`, `a e b`, `a, b e c`). Todo nome da lista
+precisa ser uma beta do formato novo (`parseTag` reconhece, não é legada e tem `beta`); senão a função lança
+`TypeError`, como `assignIntroducedIn` (`'1.2.0'`, `'v1.2.0'`, `'x'`, `''`). Essa validação vale também quando a
+nova tag é beta, em que a lista é ignorada na saída.
 
 - uma beta: ``Reúne a beta `1.2.0-beta.1`. Cada item mostra a beta em que entrou; os itens sem beta são novos nesta versão.``
 - duas ou mais: ``Reúne as betas `1.1.1-beta.1`, `1.2.0-beta.1` e `1.2.0-beta.2`. Cada item mostra a beta em que entrou; os itens sem beta são novos nesta versão.``
@@ -303,7 +312,9 @@ Título `## Contribuidores`, uma linha em branco e um item por autor dos PRs lis
 
 ### Linha de comparação
 
-A versão anterior é a **estável anterior** na estável, e a **tag de partida** na beta.
+A versão anterior é a **estável anterior** na estável, e a **tag de partida** na beta. Numa estável sem estável
+anterior (inclusive quando `previousStable` é vazia, não reconhecida ou beta), a linha é a de histórico, mesmo que
+`previousTag` esteja preenchida.
 
 - Com versão anterior: ``**Comparação completa:** [`<anterior>...<tag>`](https://github.com/<owner>/<repo>/compare/<anterior>...<tag>)``
 - Sem versão anterior: ``**Histórico completo:** [commits até `<tag>`](https://github.com/<owner>/<repo>/commits/<tag>)``
@@ -529,16 +540,19 @@ Cada PR é um objeto com:
 | `labels` | array de strings | sim |
 | `author` | string ou `null` | não (ausente = `null`) |
 | `body` | string ou `null` | não (ausente = `null`); as notas são lidas com `extractReleaseNotes` |
-| `introducedIn` | string ou `null` | não (ausente = `null`); só aparece no item na estável |
+| `introducedIn` | string ou `null` | não (ausente ou `''` = `null`); só aparece no item na estável |
 
 Campos a mais (como `commits`) são ignorados.
 
 Lança `TypeError` quando: `repository` ou `tag` são inválidos; `previousTag` ou `previousStable` não são `null`,
-`undefined` nem string; `pulls` não é array; um PR não segue a tabela acima; `betas` não é array de strings.
+`undefined` nem string; `pulls` não é array; um PR não segue a tabela acima; `betas` não é array de strings ou tem
+um nome que não é beta do formato novo (ver [Linha das betas](#linha-das-betas)).
 
-As tags de `previousTag`, `previousStable`, `betas` e `introducedIn` são usadas como texto. Só `previousStable` é
-interpretada (com `parseTag`, aceitando a legada `vX.Y.Z`) para calcular o salto; se ela não for reconhecida, a
-linha de resumo e a linha "desde" são as de "sem estável anterior".
+`''` equivale a `null` em `previousTag`, `previousStable` e `introducedIn`.
+
+As tags de `previousTag` e `introducedIn` são usadas como texto. `previousStable` é interpretada com `parseTag`
+(aceitando a legada `vX.Y.Z`): vazia, não reconhecida ou beta, ela conta como "sem estável anterior" no resumo, na
+linha "desde" e na linha de comparação, que vira a de histórico.
 
 Textos fixos que a função escreve (as regras de cada um estão nas seções de [Corpo da release](#corpo-da-release);
 `<…>` é substituído, e as crases fazem parte do texto):
@@ -562,8 +576,8 @@ Textos fixos que a função escreve (as regras de cada um estão nas seções de
 | item | ``- <texto> ([#<número>](<url>)) por [<autor>](<perfil>) · entrou na `<beta>` `` (as partes opcionais conforme [Item](#item)) |
 | aviso de corte | `_E mais <N> pull requests que não couberam aqui. Veja a lista completa na comparação._` |
 | contribuidores | `## Contribuidores`, e um `- [<autor>](<perfil>)` por autor |
-| comparação | ``**Comparação completa:** [`<anterior>...<tag>`](https://github.com/<owner>/<repo>/compare/<anterior>...<tag>)`` |
-| histórico | ``**Histórico completo:** [commits até `<tag>`](https://github.com/<owner>/<repo>/commits/<tag>)`` |
+| comparação (estável com estável anterior reconhecida; beta com tag de partida) | ``**Comparação completa:** [`<anterior>...<tag>`](https://github.com/<owner>/<repo>/compare/<anterior>...<tag>)`` |
+| histórico (os demais casos) | ``**Histórico completo:** [commits até `<tag>`](https://github.com/<owner>/<repo>/commits/<tag>)`` |
 
 Na beta, as duas frases da linha "desde" ficam na mesma linha, separadas por um espaço.
 
