@@ -15,7 +15,7 @@ on:
         description: Imagem do job (use só imagens ghcr.io/elavora/php-dev).
         required: false
         type: string
-        default: ghcr.io/elavora/php-dev:8.3-0.2.0
+        default: ghcr.io/elavora/php-dev:8.3-latest
       coverage_min:
         description: Cobertura mínima em %. Abaixo dela, o relatório mostra aviso. 0 desliga a etapa.
         required: false
@@ -137,6 +137,54 @@ jobs:
             } catch (error) {
               core.setFailed(error.message);
             }
+
+      # Imagem e digest no log e no resumo do job. Nunca interrompe o job.
+      - name: Registrar a imagem
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          IMAGE: ${{ inputs.image }}
+          CONTAINER_ID: ${{ job.container.id }}
+        with:
+          script: |
+            const http = require('node:http');
+            const { imageDigest, renderImageInfo } = require(`${process.env.GITHUB_WORKSPACE}/.elavora/scripts/quality.cjs`);
+
+            // GET na API do Docker pelo socket do runner; qualquer falha devolve null.
+            const dockerGet = (path) => new Promise((resolve) => {
+              const req = http.get({ socketPath: '/var/run/docker.sock', path, timeout: 5000 }, (res) => {
+                let data = '';
+                res.setEncoding('utf8');
+                res.on('data', (chunk) => { data += chunk; });
+                res.on('end', () => {
+                  if (res.statusCode !== 200) return resolve(null);
+                  try {
+                    resolve(JSON.parse(data));
+                  } catch {
+                    resolve(null);
+                  }
+                });
+                res.on('error', () => resolve(null));
+              });
+              req.on('timeout', () => req.destroy(new Error('tempo esgotado')));
+              req.on('error', () => resolve(null));
+            });
+
+            let repoDigests = [];
+            const containerId = (process.env.CONTAINER_ID || '').trim();
+            if (containerId) {
+              const container = await dockerGet(`/containers/${encodeURIComponent(containerId)}/json`);
+              const imageId = container && typeof container.Image === 'string' ? container.Image : '';
+              if (imageId) {
+                const image = await dockerGet(`/images/${encodeURIComponent(imageId)}/json`);
+                if (image && Array.isArray(image.RepoDigests)) repoDigests = image.RepoDigests;
+              }
+            }
+
+            const image = process.env.IMAGE;
+            const text = renderImageInfo({ image, digest: imageDigest({ image, repoDigests }) });
+            core.info(text.trim());
+            await core.summary.addRaw(text).write();
 
       - name: Decidir o modo de formatação
         id: mode
