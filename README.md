@@ -11,7 +11,7 @@ chamam os workflows reutilizáveis daqui, fixando uma versão deste repositório
 | Template de PR padrão da organização, com a seção opcional "Notas de release" | `.github/PULL_REQUEST_TEMPLATE.md` | [docs/notas-de-release.md](docs/notas-de-release.md#template-de-pr-da-organização) |
 | Labels padrão e sincronização | `.github/labels.json`, `.github/workflows/sync-labels.yml`, `scripts/sync-labels.cjs` | [docs/labels.md](docs/labels.md) |
 | Versão da automação: os workflows descobrem a própria versão pelo OIDC | `scripts/automation-ref.cjs` | [docs/versao-da-automacao.md](docs/versao-da-automacao.md) |
-| Qualidade dos pacotes PHP em PR e na `main`: formatação com commit automático, lint, auditoria, testes, cobertura e comentário no PR | `.github/workflows/php-quality.yml`, `scripts/quality.cjs` | [docs/qualidade.md](docs/qualidade.md) |
+| Qualidade dos pacotes PHP em PR e na `main`, na imagem `ghcr.io/elavora/php-dev:8.3-latest`: formatação com commit automático, lint, auditoria, testes, cobertura e comentário no PR | `.github/workflows/php-quality.yml`, `scripts/quality.cjs` | [docs/qualidade.md](docs/qualidade.md) |
 
 As regras de estilo (PHP-CS-Fixer em PER-CS e `.editorconfig`) não ficam aqui: elas são o pacote Composer
 `elavora/code-standards` (repositório `Elavora/code-standards`), que cada projeto instala no `require-dev`.

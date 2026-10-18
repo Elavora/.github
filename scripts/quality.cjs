@@ -217,6 +217,36 @@ function findQualityComment(comments) {
   return found ? found.id : null;
 }
 
+function imageRepository(image) {
+  let ref = String(image ?? '').trim();
+  const at = ref.indexOf('@');
+  if (at >= 0) ref = ref.slice(0, at);
+  const colon = ref.lastIndexOf(':');
+  if (colon > ref.lastIndexOf('/')) ref = ref.slice(0, colon);
+  return ref.toLowerCase();
+}
+
+function imageDigest({ image, repoDigests } = {}) {
+  const ref = String(image ?? '');
+  const at = ref.indexOf('@');
+  if (at >= 0) return ref.slice(at + 1).trim() || null;
+  if (!Array.isArray(repoDigests)) return null;
+  const repository = imageRepository(ref);
+  for (const item of repoDigests) {
+    if (typeof item !== 'string') continue;
+    const i = item.indexOf('@');
+    if (i < 0) continue;
+    if (imageRepository(item.slice(0, i)) === repository) return item.slice(i + 1);
+  }
+  return null;
+}
+
+function renderImageInfo({ image, digest } = {}) {
+  const name = String(image ?? '').trim();
+  const tail = typeof digest === 'string' && digest !== '' ? `digest \`${digest}\`` : 'digest não disponível';
+  return `Imagem do job: \`${name}\` · ${tail}\n\n`;
+}
+
 module.exports = {
   MARKER,
   COMMIT_MESSAGE,
@@ -230,4 +260,7 @@ module.exports = {
   overallStatus,
   renderReport,
   findQualityComment,
+  imageRepository,
+  imageDigest,
+  renderImageInfo,
 };

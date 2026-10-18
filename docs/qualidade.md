@@ -22,7 +22,7 @@ Cada coisa vem de um lugar:
 
 | O quê | Onde fica | Quem atualiza |
 | --- | --- | --- |
-| Ferramentas (PHP-CS-Fixer e editorconfig-checker) | imagem `ghcr.io/elavora/php-dev`, do `Elavora/devcontainers` | troca da versão da imagem |
+| Ferramentas (PHP-CS-Fixer e editorconfig-checker) | imagem `ghcr.io/elavora/php-dev:8.3-latest`, do `Elavora/devcontainers` | ninguém: a `8.3-latest` acompanha cada estável do `devcontainers` (ver [Imagem do job](#imagem-do-job)) |
 | Regras de estilo (configuração do PHP-CS-Fixer e `.editorconfig`) | pacote Composer `elavora/code-standards`, no `require-dev` de cada repositório | Dependabot (ecossistema `composer`) |
 | Workflow de qualidade e scripts | este repositório (`Elavora/.github`) | troca da versão no chamador |
 
@@ -30,7 +30,8 @@ Cada coisa vem de um lugar:
 
 Exemplo: alguém abre um PR no `api-framework` com dois arquivos mal indentados.
 
-1. O workflow roda dentro da imagem `ghcr.io/elavora/php-dev:8.3-0.2.0`.
+1. O workflow roda dentro da imagem `ghcr.io/elavora/php-dev:8.3-latest` e registra no resumo do job qual imagem
+   (digest) rodou.
 2. Roda o `composer install`, que também sincroniza o `.editorconfig` e o `.php-cs-fixer.dist.php` com a versão
    instalada do `elavora/code-standards`.
 3. O PHP-CS-Fixer, com a configuração do pacote, corrige os dois arquivos. O workflow faz o commit
@@ -89,7 +90,10 @@ precisam de formatação (ver [Modo de formatação](#modo-de-formatação-commi
        uses: Elavora/.github/.github/workflows/php-quality.yml@1.1.0
    ```
 
-4. Use no `.devcontainer/devcontainer.json` a imagem `8.3-0.2.0` ou mais nova (ver [No devcontainer](#no-devcontainer)).
+   O chamador não passa `image`: o padrão `8.3-latest` é o recomendado. Passe `image` só para fixar uma versão (ver
+   [Imagem do job](#imagem-do-job)).
+4. Use no `.devcontainer/devcontainer.json` a imagem `ghcr.io/elavora/php-dev:8.3-latest`, a mesma do CI (ver
+   [No devcontainer](#no-devcontainer)).
 5. Remova o `quality.yml` antigo, o que chama o SHA `1e0f42a` da branch `fix/centraliza-automacao`.
 6. Se o repositório tiver proteção de branch com checks obrigatórios, retire ou troque os nomes antigos
    (ver [Nomes de job e de check](#nomes-de-job-e-de-check)).
@@ -171,10 +175,13 @@ relatório mostra um aviso de que o repositório não adotou o `elavora/code-sta
 O devcontainer usa as mesmas ferramentas e os mesmos arquivos de configuração do CI, e organiza o código ao
 salvar. Basta o `.devcontainer/devcontainer.json` seguir o
 [`examples/devcontainer.json`](https://github.com/Elavora/devcontainers/blob/main/examples/devcontainer.json) do
-`Elavora/devcontainers`, a partir da imagem `ghcr.io/elavora/php-dev:8.3-0.2.0`, que traz:
+`Elavora/devcontainers`, a partir da imagem `ghcr.io/elavora/php-dev:8.3-latest`, que traz:
 
-- `php-cs-fixer` 3.95.27 e `editorconfig-checker` 4.0.2 em `/usr/local/bin`. São as mesmas versões do CI quando o
-  `image` do workflow é a mesma.
+- `php-cs-fixer` e `editorconfig-checker` em `/usr/local/bin`. São as mesmas versões do CI quando o devcontainer
+  está com a mesma imagem que o CI baixou. O CI baixa a `8.3-latest` a cada execução, mas o devcontainer usa a cópia
+  que já está na máquina. Depois de uma estável nova do `devcontainers`, reconstrua o container (no VS Code,
+  "Dev Containers: Rebuild Container", ou `docker pull ghcr.io/elavora/php-dev:8.3-latest` antes) para voltar a
+  bater com o CI. O digest no resumo do job do CI diz qual imagem ele usou.
 - As extensões `junstyle.php-cs-fixer` e `EditorConfig.EditorConfig`, com formatação ao salvar. A extensão do
   PHP-CS-Fixer procura `.php-cs-fixer.php` e depois `.php-cs-fixer.dist.php` na raiz, e encontra o stub sem
   nenhuma configuração extra. O `postCreateCommand` do exemplo já roda o `composer install`, que traz o pacote para
@@ -198,7 +205,7 @@ Só `workflow_call`. Ele espera ser chamado a partir de `pull_request` ou de `pu
 | Entrada | Tipo | Obrigatória | Padrão | Uso |
 | --- | --- | --- | --- | --- |
 | `automation_ref` | string | não | `''` (descobre pelo OIDC) | versão do `.github` (tag estável ou SHA completo), a mesma do `uses`; ver [versao-da-automacao.md](versao-da-automacao.md) |
-| `image` | string | não | `ghcr.io/elavora/php-dev:8.3-0.2.0` | imagem do job; use só imagens `ghcr.io/elavora/php-dev` |
+| `image` | string | não | `ghcr.io/elavora/php-dev:8.3-latest` | imagem do job; use só imagens `ghcr.io/elavora/php-dev`. Omita para acompanhar a última estável; passe só para fixar uma versão (ver [Imagem do job](#imagem-do-job)) |
 | `coverage_min` | number | não | `80` | cobertura mínima em %. Abaixo dela, o relatório mostra aviso, sem erro. `0` desliga a etapa |
 | `composer_audit` | boolean | não | `true` | roda `composer audit` depois de instalar as dependências |
 | `dependencies` | string | não | `lowest` | `lowest` instala as versões mínimas; `install` usa `composer install` |
@@ -236,8 +243,49 @@ obrigatório: a adoção retira os checks antigos da proteção.
   pasta de trabalho pertence ao runner, e o checkout falharia sem root.
 - Variáveis do job: `COMPOSER_ALLOW_SUPERUSER: '1'` e `COMPOSER_NO_INTERACTION: '1'`.
 - O PHP-CS-Fixer e o editorconfig-checker são chamados pelo nome (`php-cs-fixer` e `editorconfig-checker`), no
-  `PATH` da imagem. Na `8.3-0.2.0` são o PHP-CS-Fixer 3.95.27 e o editorconfig-checker 4.0.2. Não existe o alias
-  `ec`.
+  `PATH` da imagem, nas versões que a imagem traz. Não existe o alias `ec`.
+
+### Imagem do job
+
+**Padrão:** `ghcr.io/elavora/php-dev:8.3-latest`. É a referência móvel que o `Elavora/devcontainers` publica: ela só
+muda quando o `devcontainers` lança uma versão **estável** (por exemplo `8.3-0.4.0`), e passa a apontar para a mesma
+imagem dessa versão. Uma beta (`8.3-0.4.0-beta.1`) nunca move a `8.3-latest`. Com isso, o CI de todos os pacotes
+acompanha a imagem sozinho, sem PR de troca de versão em cada repositório. Os devcontainers dos projetos usam a
+mesma `8.3-latest`.
+
+Os chamadores da organização (`api-framework`, `api-skeleton` e os demais `api-*`) **não passam** `image`.
+
+**Risco:** uma estável nova da imagem vale para o CI de todos os repositórios **na hora**, já na próxima execução.
+Os runners do GitHub começam sempre vazios e baixam a `8.3-latest` a cada job, então não existe uma janela em que a
+versão antiga continue valendo. Se a imagem nova trouxer, por exemplo, um PHP-CS-Fixer com uma regra diferente, PRs
+que não mexeram no código podem passar a receber commit `style:` ou ficar com erro.
+
+**Como fixar:** quem precisar de uma imagem estável e conhecida passa `image` no `with` do chamador, com uma versão
+publicada do `devcontainers` ou com o digest:
+
+```yaml
+    uses: Elavora/.github/.github/workflows/php-quality.yml@1.3.0
+    with:
+      image: ghcr.io/elavora/php-dev:8.3-0.3.0
+      # ou, para travar a imagem exata:
+      # image: ghcr.io/elavora/php-dev@sha256:<digest>
+```
+
+Fixar é a saída quando uma estável nova da imagem quebra o CI: o repositório afetado fixa a versão anterior até o
+`devcontainers` lançar uma correção, e depois volta a omitir `image`. A `8.3-latest` não volta para trás sozinha:
+ela só anda de novo com a próxima estável do `devcontainers`.
+
+**Qual imagem rodou:** cada execução registra a imagem e o digest no log do passo `Registrar a imagem` e no resumo do
+job, numa linha antes do relatório:
+
+> Imagem do job: `ghcr.io/elavora/php-dev:8.3-latest` · digest `sha256:3f1c...e9a2`
+
+Quando o digest não pode ser obtido, a linha diz `digest não disponível`, e o job segue normalmente. Nesse caso, o
+log do passo `Initialize containers`, que o próprio runner escreve, mostra o `Digest: sha256:...` do `docker pull`.
+O comentário fixo no PR não muda.
+
+Para saber a qual versão o digest corresponde, compare com as versões publicadas do pacote `php-dev` no GitHub
+(Packages do `Elavora/devcontainers`): a versão estável e a `8.3-latest` daquele momento têm o mesmo digest.
 
 ### Concorrência
 
@@ -256,7 +304,8 @@ Grupo `elavora-quality-${{ github.repository }}-${{ github.event.pull_request.nu
    - em `push`: `github.sha`.
 3. **Marcar o diretório como seguro** para o git (`git config --global --add safe.directory "$GITHUB_WORKSPACE"`).
 4. **Checkout dos scripts**: `Elavora/.github` na versão obtida no passo 1, em `.elavora/`, só com `scripts/`, sem
-   persistir credenciais. Depois, confere a versão com `resolveAutomationRef`.
+   persistir credenciais. Depois, confere a versão com `resolveAutomationRef`. Em seguida vem o passo
+   **Registrar a imagem** (ver [Passo `Registrar a imagem`](#passo-registrar-a-imagem)), que nunca interrompe o job.
 5. **Decidir o modo de formatação** com `formatMode` (ver [Referência](#referência-scriptsqualitycjs)): `commit` ou
    `report`, e o motivo.
 6. **Ler os scripts do Composer** com `composerScripts` sobre o `composer.json`. Se a função lançar erro
@@ -308,6 +357,32 @@ Grupo `elavora-quality-${{ github.repository }}-${{ github.event.pull_request.nu
 Nos passos acima, "a instalação concluída" significa o passo 7 concluído e, com `dependencies: lowest`, também o
 passo 11. Os passos 7, 8, 10, 11, 12, 13, 14 e 15 não interrompem o job quando falham: o resultado de cada um vai
 para o relatório.
+
+### Passo `Registrar a imagem`
+
+Passo do workflow com o nome exato `Registrar a imagem`, logo depois de `Conferir a versão da automação` e antes de
+`Decidir o modo de formatação`. Ele:
+
+- usa `actions/github-script`, fixado pelo mesmo SHA dos outros passos (`v9.0.0`);
+- tem `continue-on-error: true` e nenhum `if`, para rodar em toda execução que chegou até ele;
+- recebe no `env` `IMAGE: ${{ inputs.image }}` e `CONTAINER_ID: ${{ job.container.id }}`.
+
+O script:
+
+1. Pergunta ao Docker do runner, pelo socket `/var/run/docker.sock` (que o runner monta no container do job), com
+   o módulo `node:http` e a opção `socketPath`:
+   - `GET /containers/<CONTAINER_ID>/json` e lê o campo `Image` (o id local da imagem);
+   - `GET /images/<Image>/json` e lê o campo `RepoDigests` (por exemplo
+     `["ghcr.io/elavora/php-dev@sha256:3f1c..."]`).
+
+   Cada pedido tem tempo limite de 5 segundos. Qualquer falha (socket ausente, `CONTAINER_ID` vazio, resposta que
+   não é 200, JSON inválido, tempo esgotado) é tratada como `RepoDigests` vazio, sem aviso e sem erro.
+2. Calcula o digest com `imageDigest({ image: IMAGE, repoDigests })` e o texto com `renderImageInfo({ image: IMAGE,
+   digest })`, ambos de `scripts/quality.cjs`.
+3. Escreve o texto no log (`core.info`) e no resumo do job (`core.summary.addRaw(texto).write()`). Como este passo
+   roda antes do `Relatório`, a linha aparece acima da tabela no resumo.
+
+O passo não muda o resultado do job, as etapas do relatório nem o comentário fixo no PR.
 
 ### Modo de formatação: commit ou aviso
 
@@ -618,6 +693,65 @@ Commit `1a2b3c4` · [ver a execução](https://github.com/Elavora/api-framework/
 No modo `commit` com push concluído, `sha` é o commit `style:` criado. Nos outros casos, é o commit testado (o do
 passo 2).
 
+### `imageRepository(image)`
+
+Recebe uma referência de imagem e devolve só o repositório, sem a tag e sem o digest, em minúsculas. Espaços nas
+pontas são ignorados. Primeiro sai o digest: tudo a partir do primeiro `@`. Depois sai a tag: tudo a partir do
+último `:` que aparece **depois** da última `/`, para não confundir com a porta do registro. `null`, `undefined` ou
+vazio → `''`.
+
+| Entrada | Saída |
+| --- | --- |
+| `'ghcr.io/elavora/php-dev:8.3-latest'` | `'ghcr.io/elavora/php-dev'` |
+| `'ghcr.io/Elavora/php-dev:8.3-0.3.0'` | `'ghcr.io/elavora/php-dev'` |
+| `'ghcr.io/elavora/php-dev@sha256:abc'` | `'ghcr.io/elavora/php-dev'` |
+| `'ghcr.io/elavora/php-dev:8.3-latest@sha256:abc'` | `'ghcr.io/elavora/php-dev'` |
+| `'localhost:5000/elavora/php-dev:8.3'` | `'localhost:5000/elavora/php-dev'` |
+| `'localhost:5000/elavora/php-dev'` | `'localhost:5000/elavora/php-dev'` |
+| `''` | `''` |
+
+### `imageDigest({ image, repoDigests })`
+
+Devolve o digest da imagem que rodou (`sha256:...`) ou `null`. Vale a primeira regra que casar:
+
+1. `image` tem `@`: devolve o que vem depois do primeiro `@`, sem espaços nas pontas (quem fixou pelo digest já sabe
+   qual rodou). Se depois do `@` não houver nada, devolve `null`.
+2. `repoDigests` é um array: devolve, do primeiro item que é uma string no formato `<repositório>@<digest>` e cujo
+   `imageRepository(<repositório>)` é igual a `imageRepository(image)`, a parte depois do `@`. Itens que não são
+   string, sem `@` ou de outro repositório são ignorados.
+3. Nos outros casos (`repoDigests` ausente, `null`, que não é array, vazio ou sem item que case): `null`.
+
+Exemplos:
+
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', repoDigests: ['ghcr.io/elavora/php-dev@sha256:aaa'] }` →
+  `'sha256:aaa'`;
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', repoDigests: ['ghcr.io/outro/img@sha256:bbb', 'ghcr.io/elavora/php-dev@sha256:aaa'] }`
+  → `'sha256:aaa'`;
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', repoDigests: ['GHCR.IO/Elavora/php-dev@sha256:aaa'] }` →
+  `'sha256:aaa'` (o repositório é comparado sem diferenciar caixa; o digest volta como veio);
+- `{ image: 'ghcr.io/elavora/php-dev@sha256:ccc', repoDigests: [] }` → `'sha256:ccc'`;
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', repoDigests: [] }` → `null`;
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', repoDigests: ['ghcr.io/outro/img@sha256:bbb'] }` → `null`;
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', repoDigests: [42, 'sem-arroba', null] }` → `null`;
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest' }` → `null`.
+
+### `renderImageInfo({ image, digest })`
+
+Devolve a linha em Markdown do resumo do job, terminada em `\n\n` (uma linha em branco separa a linha da tabela do
+relatório). `image` vai sem espaços nas pontas.
+
+- Com `digest` (string não vazia): `` Imagem do job: `<image>` · digest `<digest>`\n\n ``.
+- Com `digest` `null`, `undefined` ou vazio: `` Imagem do job: `<image>` · digest não disponível\n\n ``.
+
+Exemplos:
+
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', digest: 'sha256:aaa' }` →
+  ``'Imagem do job: `ghcr.io/elavora/php-dev:8.3-latest` · digest `sha256:aaa`\n\n'``;
+- `{ image: 'ghcr.io/elavora/php-dev:8.3-latest', digest: null }` →
+  ``'Imagem do job: `ghcr.io/elavora/php-dev:8.3-latest` · digest não disponível\n\n'``.
+
+O separador ` · ` é espaço, o caractere `·` (U+00B7) e espaço, o mesmo da última linha de `renderReport`.
+
 ### `findQualityComment(comments)`
 
 Recebe a lista de comentários do PR, como a API do GitHub devolve (`[{ id, body, user: { login } }]`), e devolve o
@@ -638,6 +772,19 @@ Comentários de outros autores com o marcador são ignorados.
 - Ordem de adoção: imagem `8.3-0.2.0` e `elavora/code-standards` `1.0.0` publicados, depois esta `1.1.0`. Em seguida
   o `api-framework` e o `api-skeleton` adotam, cada um num PR próprio. Os outros pacotes `api-*` adotam junto com a
   fase 2 do release.
+
+### Imagem padrão `8.3-latest` (versão `1.3.0`)
+
+- O padrão da entrada `image` passa de `ghcr.io/elavora/php-dev:8.3-0.2.0` para
+  `ghcr.io/elavora/php-dev:8.3-latest`. A entrada continua opcional e com o mesmo nome; quem passa `image` não
+  percebe diferença.
+- Novo passo `Registrar a imagem` e novas funções `imageRepository`, `imageDigest` e `renderImageInfo` em
+  `scripts/quality.cjs`, com testes em `tests/`.
+- Sai na versão **`1.3.0`** do `.github`: o PR leva as labels `enhancement` (minor) e `release` (estável). Não é
+  `upgrade`: as entradas, os nomes de job e de check e o relatório continuam os mesmos.
+- Depois da `1.3.0`, o `api-framework` (que hoje passa `image: ghcr.io/elavora/php-dev:8.3-0.3.0`) e o
+  `api-skeleton` atualizam o `uses` e deixam de passar `image`, e os devcontainers dos projetos passam a usar a
+  `8.3-latest`. Cada um num PR próprio.
 
 ---
 
