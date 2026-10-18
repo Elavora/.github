@@ -1137,3 +1137,78 @@ test.describe('auto-release.yml', () => {
     assert.doesNotMatch(codeLines(readWorkflow('auto-release.yml')).join('\n'), /package_name/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Casos de borda fixados pela doc: string vazia, estável anterior beta ou não reconhecida, betas inválidas
+// ---------------------------------------------------------------------------
+
+test.describe('renderReleaseNotes: string vazia e estável anterior inválida', () => {
+  const lastLine = (body) => body.split('\n').filter(Boolean).pop();
+  const hist = (tag) => `**Histórico completo:** [commits até \`${tag}\`](https://github.com/Elavora/.github/commits/${tag})`;
+  const FIRST = 'Primeira versão estável; mudanças desde o início do projeto.';
+
+  test("exemplo da doc: 1.0.0 com previousStable '1.0.0-beta.3'", () => {
+    const body = render({ tag: '1.0.0', previousStable: '1.0.0-beta.3' });
+    assert.equal(body.split('\n')[0], 'Versão estável **1.0.0**.');
+    assert.equal(desdeLine(body), FIRST);
+    assert.equal(lastLine(body), hist('1.0.0'));
+  });
+
+  for (const previousStable of ['', 'foo', '1.1', '1.1.0-beta.2', 'v1.1.0-beta.1']) {
+    test(`estável com previousStable ${JSON.stringify(previousStable)} e previousTag preenchida: sem estável anterior, histórico`, () => {
+      const body = render({ tag: '1.2.0', previousTag: '1.2.0-beta.1', previousStable });
+      assert.equal(body.split('\n')[0], 'Versão estável **1.2.0**.');
+      assert.equal(desdeLine(body), FIRST);
+      assert.equal(lastLine(body), hist('1.2.0'));
+      assert.ok(!body.includes('Comparação completa'));
+    });
+  }
+
+  for (const previousStable of ['', '1.1.0-beta.2']) {
+    test(`beta com previousStable ${JSON.stringify(previousStable)}: sem estável anterior, comparação pela tag de partida`, () => {
+      const body = render({ tag: '1.2.0-beta.2', previousTag: '1.2.0-beta.1', previousStable });
+      assert.equal(body.split('\n')[0], 'Pré-release **1.2.0-beta.2** da `1.2.0`.');
+      assert.equal(desdeLine(body), 'Mudanças desde `1.2.0-beta.1`. Ainda não há versão estável.');
+      assert.equal(lastLine(body), '**Comparação completa:** [`1.2.0-beta.1...1.2.0-beta.2`](https://github.com/Elavora/.github/compare/1.2.0-beta.1...1.2.0-beta.2)');
+    });
+  }
+
+  test("beta com previousTag '': sem tag de partida, histórico", () => {
+    const body = render({ tag: '1.2.0-beta.1', previousTag: '', previousStable: '1.1.0' });
+    assert.equal(desdeLine(body), 'Mudanças desde o início do projeto. Última versão estável: `1.1.0`.');
+    assert.equal(lastLine(body), hist('1.2.0-beta.1'));
+  });
+
+  test("beta com previousTag '' e previousStable '': igual a sem nenhuma tag", () => {
+    const body = render({ tag: '0.0.1-beta.1', previousTag: '', previousStable: '' });
+    assert.equal(body, render({ tag: '0.0.1-beta.1', previousTag: null, previousStable: null }));
+    assert.equal(desdeLine(body), 'Mudanças desde o início do projeto. Ainda não há versão estável.');
+  });
+
+  test("estável com previousStable '' é igual a null", () => {
+    assert.equal(render({ tag: '1.0.0', previousStable: '' }), render({ tag: '1.0.0', previousStable: null }));
+  });
+
+  test("introducedIn '' equivale a null (sem \"entrou na\")", () => {
+    const body = render({ tag: '1.2.0', previousStable: '1.1.0', pulls: [pr({ number: 1, introducedIn: '' })] });
+    assert.deepEqual(itemLines(body), [`- Algo ([#1](${prUrl(1)})) por ${userLink('ScriptPlayerAgent')}`]);
+    assert.ok(!body.includes('entrou na'));
+  });
+});
+
+test.describe('renderReleaseNotes: betas inválidas e ordem', () => {
+  for (const bad of ['1.2.0', 'v1.2.0', 'x', '', 'v1.2.0-beta.1']) {
+    for (const tag of ['1.2.0', '1.2.0-beta.2']) {
+      test(`betas com ${JSON.stringify(bad)} lança TypeError (tag ${tag})`, () => {
+        throwsType('renderReleaseNotes', {
+          repository: REPO, tag, previousTag: '1.2.0-beta.1', previousStable: '1.1.0', pulls: [], betas: ['1.2.0-beta.1', bad],
+        });
+      });
+    }
+  }
+
+  test('ordem por base e depois por N, numericamente', () => {
+    const body = render({ tag: '1.10.0', previousStable: '1.8.0', betas: ['1.10.0-beta.1', '1.9.0-beta.10', '1.9.0-beta.2'] });
+    assert.equal(body.split('\n\n')[1], 'Reúne as betas `1.9.0-beta.2`, `1.9.0-beta.10` e `1.10.0-beta.1`. Cada item mostra a beta em que entrou; os itens sem beta são novos nesta versão.');
+  });
+});
