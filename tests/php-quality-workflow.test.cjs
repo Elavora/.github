@@ -438,6 +438,26 @@ test.describe('php-quality.yml: passo Registrar a imagem', () => {
     assert.match(t, /core\.info/);
     assert.match(t, /core\.summary/);
   });
+
+  test('script consulta /containers/<id>/json (campo Image) e /images/<Image>/json (campo RepoDigests)', () => {
+    const t = step().lines.join('\n');
+    assert.match(t, /node:http/);
+    assert.match(t, /\/containers\//);
+    assert.match(t, /\/images\//);
+    assert.match(t, /\/json/);
+    assert.match(t, /\bImage\b/);
+    assert.match(t, /RepoDigests/);
+  });
+
+  test('cada pedido ao Docker tem tempo limite de 5 segundos', () => {
+    const t = step().lines.join('\n');
+    assert.match(t, /timeout[^\n]{0,40}?\b(5000|5_000|5\s*\*\s*1000)\b/);
+  });
+
+  test('escreve no resumo do job com core.summary.addRaw(...).write()', () => {
+    const t = step().lines.join('\n');
+    assert.match(t, /core\.summary\s*\.addRaw\([^)]*\)\s*\.write\(\)/);
+  });
 });
 
 test.describe('php-quality.yml: chaves de topo', () => {
