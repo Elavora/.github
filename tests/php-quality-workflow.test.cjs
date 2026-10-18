@@ -102,11 +102,11 @@ test.describe('php-quality.yml: entradas', () => {
     assert.deepEqual(names, ['automation_ref', 'composer_audit', 'coverage_min', 'dependencies', 'image']);
   });
 
-  test('image: string, opcional, padrão ghcr.io/elavora/php-dev:8.3-0.2.0', () => {
+  test('image: string, opcional, padrão ghcr.io/elavora/php-dev:8.3-latest', () => {
     const b = input('image');
     assert.equal(scalar(b, 'type'), 'string');
     assert.notEqual(scalar(b, 'required'), 'true');
-    assert.equal(scalar(b, 'default'), 'ghcr.io/elavora/php-dev:8.3-0.2.0');
+    assert.equal(scalar(b, 'default'), 'ghcr.io/elavora/php-dev:8.3-latest');
   });
 
   test('coverage_min: number, opcional, padrão 80', () => {
@@ -364,6 +364,79 @@ test.describe('php-quality.yml: passos', () => {
     for (const u of uses) {
       assert.match(u, /@[0-9a-f]{40}$/, `${u} precisa estar fixada por SHA completo`);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contrato: docs/qualidade.md, seção "Passo `Registrar a imagem`"
+// ---------------------------------------------------------------------------
+
+// Passos do job quality: [{ name, lines }], na ordem do arquivo.
+function qualitySteps() {
+  const jobs = block(readWorkflow(), 'jobs');
+  assert.ok(jobs, 'jobs ausente');
+  const quality = block(jobs, 'quality');
+  assert.ok(quality, 'job quality ausente');
+  const steps = block(quality, 'steps');
+  assert.ok(steps, 'steps do job quality ausente');
+  const nonEmpty = steps.filter((l) => l.trim() !== '');
+  const base = Math.min(...nonEmpty.map(indent));
+  const out = [];
+  for (const l of steps) {
+    if (l.trim() !== '' && indent(l) === base && /^\s*-\s/.test(l)) {
+      out.push({ name: undefined, lines: [l.replace(/^(\s*)-\s/, '$1  ')] });
+    } else if (out.length > 0) {
+      out[out.length - 1].lines.push(l);
+    }
+  }
+  for (const s of out) s.name = scalar(s.lines, 'name');
+  return out;
+}
+
+const REGISTER_IMAGE = 'Registrar a imagem';
+const GITHUB_SCRIPT = 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3';
+
+test.describe('php-quality.yml: passo Registrar a imagem', () => {
+  const step = () => {
+    const s = qualitySteps().find((x) => x.name === REGISTER_IMAGE);
+    assert.ok(s, `passo "${REGISTER_IMAGE}" ausente`);
+    return s;
+  };
+
+  test('fica logo depois de Conferir a versão da automação e antes de Decidir o modo de formatação', () => {
+    const names = qualitySteps().map((s) => s.name);
+    const i = names.indexOf(REGISTER_IMAGE);
+    assert.ok(i >= 0, `passo "${REGISTER_IMAGE}" ausente`);
+    assert.equal(names[i - 1], 'Conferir a versão da automação');
+    assert.equal(names[i + 1], 'Decidir o modo de formatação');
+  });
+
+  test('usa actions/github-script fixado pelo SHA da v9.0.0', () => {
+    assert.equal(scalar(step().lines, 'uses'), GITHUB_SCRIPT);
+  });
+
+  test('continue-on-error: true e nenhum if', () => {
+    const s = step();
+    assert.equal(scalar(s.lines, 'continue-on-error'), 'true');
+    assert.equal(scalar(s.lines, 'if'), undefined, 'o passo não deve ter if');
+  });
+
+  test('env com IMAGE e CONTAINER_ID', () => {
+    const env = block(step().lines, 'env');
+    assert.ok(env, 'env do passo ausente');
+    assert.match(scalar(env, 'IMAGE') || '', /^\$\{\{\s*inputs\.image\s*\}\}$/);
+    assert.match(scalar(env, 'CONTAINER_ID') || '', /^\$\{\{\s*job\.container\.id\s*\}\}$/);
+  });
+
+  test('script usa imageDigest e renderImageInfo de scripts/quality.cjs, o socket do Docker e o resumo do job', () => {
+    const t = step().lines.join('\n');
+    assert.match(t, /\.elavora\/scripts\/quality\.cjs/);
+    assert.match(t, /imageDigest/);
+    assert.match(t, /renderImageInfo/);
+    assert.match(t, /\/var\/run\/docker\.sock/);
+    assert.match(t, /socketPath/);
+    assert.match(t, /core\.info/);
+    assert.match(t, /core\.summary/);
   });
 });
 
