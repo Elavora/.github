@@ -11,7 +11,7 @@ on:
         type: string
         default: ''
       package_name:
-        description: Nome exibido no título da release. Padrão é o nome do repositório.
+        description: Ignorada a partir da 1.2.0 (o título é sempre owner/repo tag). Continua aceita para não quebrar os chamadores.
         required: false
         type: string
         default: ''
@@ -126,7 +126,8 @@ jobs:
               core.setFailed(error.message);
             }
 
-      # Idempotência e intervalo de PRs desde a tag de partida (docs/release.md, "Intervalo de PRs").
+      # Idempotência, intervalo de PRs desde a tag de partida e intervalo das notas
+      # (docs/release.md, "Intervalo de PRs" e "Intervalo das notas").
       - name: Levantar o intervalo de PRs
         id: interval
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -134,11 +135,19 @@ jobs:
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         with:
           script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
             const { parseTag, aggregateLabels } = require(
               `${process.env.GITHUB_WORKSPACE}/.elavora/scripts/release-version.cjs`,
             );
+            const { assignIntroducedIn } = require(
+              `${process.env.GITHUB_WORKSPACE}/.elavora/scripts/release-notes.cjs`,
+            );
             const merge = process.env.MERGE_SHA;
             const { owner, repo } = context.repo;
+            const event = context.payload.pull_request;
+            // Os dados completos dos PRs (com o corpo) vão num arquivo, nunca em outputs.
+            const notesFile = path.join(process.env.RUNNER_TEMP, 'elavora-release-notes.json');
 
             const git = async (...args) => (await exec.getExecOutput('git', args, { silent: true })).stdout.trim();
             const isAncestor = async (ancestor, commit) => (await exec.exec(
@@ -150,6 +159,89 @@ jobs:
               const rb = rank(b);
               for (let i = 0; i < ra.length; i += 1) if (ra[i] !== rb[i]) return ra[i] - rb[i];
               return 0;
+            };
+            const compareBase = (a, b) => a.major - b.major || a.minor - b.minor || a.patch - b.patch;
+            const lines = (text) => text.split('\n').filter(Boolean);
+
+            // PRs integrados na main desde `from` (ou desde o início), com os dados que as notas usam.
+            const associatedBySha = new Map();
+            const collect = async (from) => {
+              const range = from ? `${from.commit}..${merge}` : merge;
+              const commits = lines(await git('rev-list', '--first-parent', range));
+              const pulls = new Map();
+              for (const sha of commits) {
+                if (!associatedBySha.has(sha)) {
+                  associatedBySha.set(sha, await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                    owner, repo, commit_sha: sha, per_page: 100,
+                  }));
+                }
+                for (const pr of associatedBySha.get(sha)) {
+                  if (!pr.merged_at || pr.base?.ref !== 'main') continue;
+                  const found = pulls.get(pr.number);
+                  if (found) {
+                    if (!found.commits.includes(sha)) found.commits.push(sha);
+                    continue;
+                  }
+                  pulls.set(pr.number, {
+                    number: pr.number,
+                    labels: pr.labels.map((l) => l.name),
+                    title: pr.title,
+                    url: pr.html_url,
+                    author: pr.user?.login ?? null,
+                    body: pr.body ?? null,
+                    commits: [sha],
+                  });
+                }
+              }
+
+              // O PR do evento entra sempre, com os dados do payload e o merge nos commits.
+              const eventCommits = [...(pulls.get(event.number)?.commits ?? [])];
+              if (!eventCommits.includes(merge)) eventCommits.push(merge);
+              pulls.set(event.number, {
+                number: event.number,
+                labels: event.labels.map((l) => l.name),
+                title: event.title,
+                url: event.html_url,
+                author: event.user?.login ?? null,
+                body: event.body ?? null,
+                commits: eventCommits,
+              });
+              return [...pulls.values()].sort((a, b) => a.number - b.number);
+            };
+
+            // Intervalo das notas: na beta, o da versão; na estável, desde a estável anterior.
+            // `candidates` são as tags que podem ser partida, estável anterior ou beta (sem a nova tag).
+            const writeNotes = async ({ stable, candidates, start, versionPulls }) => {
+              const ancestors = [];
+              for (const t of candidates) if (await isAncestor(t.commit, merge)) ancestors.push(t);
+              let previousStable = null;
+              for (const t of ancestors.filter((a) => a.beta === null)) {
+                const cmp = previousStable ? compareBase(t, previousStable) : 1;
+                if (cmp > 0 || (cmp === 0 && previousStable.legacy && !t.legacy)) previousStable = t;
+              }
+
+              const data = {
+                previousTag: start ? start.name : null,
+                previousStable: previousStable ? previousStable.name : null,
+                pulls: [],
+                betas: [],
+              };
+              if (!stable) {
+                data.pulls = versionPulls ?? await collect(start);
+              } else {
+                const pulls = await collect(previousStable);
+                const betas = [];
+                for (const b of ancestors) {
+                  if (b.beta === null || b.legacy) continue;
+                  if (previousStable && compareBase(b, previousStable) <= 0) continue;
+                  const range = previousStable ? `${previousStable.commit}..${b.commit}` : b.commit;
+                  betas.push({ tag: b.name, commits: lines(await git('rev-list', '--first-parent', range)) });
+                }
+                data.pulls = assignIntroducedIn({ pulls, betas });
+                data.betas = betas.map((b) => b.tag);
+              }
+              fs.writeFileSync(notesFile, JSON.stringify(data));
+              core.setOutput('notes_file', notesFile);
             };
 
             // Só as tags reconhecidas na leitura, com o commit para onde apontam.
@@ -168,6 +260,22 @@ jobs:
               core.setOutput('mode', 'reuse');
               core.setOutput('reused_tag', reused.name);
               core.setOutput('pulls', '[]');
+
+              // Release já existe: fica intocada e nada é gerado.
+              try {
+                await github.rest.repos.getReleaseByTag({ owner, repo, tag: reused.name });
+                return;
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+
+              // A release tinha falhado: as notas tratam a tag reaproveitada como a nova.
+              const candidates = tags.filter((t) => t.name !== reused.name);
+              let reusedStart = null;
+              for (const t of candidates) {
+                if (await isAncestor(t.commit, merge)) reusedStart = t;
+              }
+              await writeNotes({ stable: reused.beta === null, candidates, start: reusedStart, versionPulls: null });
               return;
             }
 
@@ -186,29 +294,16 @@ jobs:
             for (const t of tags) {
               if (await isAncestor(t.commit, merge)) start = t;
             }
-            const range = start ? `${start.commit}..${merge}` : merge;
-            const commits = (await git('rev-list', '--first-parent', range)).split('\n').filter(Boolean);
-
-            const pulls = new Map();
-            for (const sha of commits) {
-              const associated = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
-                owner, repo, commit_sha: sha, per_page: 100,
-              });
-              for (const pr of associated) {
-                if (!pr.merged_at || pr.base?.ref !== 'main' || pulls.has(pr.number)) continue;
-                pulls.set(pr.number, { number: pr.number, labels: pr.labels.map((l) => l.name) });
-              }
-            }
-
-            // O PR do evento entra sempre, com as labels do payload.
-            const event = context.payload.pull_request;
-            pulls.set(event.number, { number: event.number, labels: event.labels.map((l) => l.name) });
-
-            const list = [...pulls.values()].sort((a, b) => a.number - b.number);
+            const list = await collect(start);
+            const labels = aggregateLabels(list);
             core.setOutput('mode', 'new');
             core.setOutput('start', start ? start.name : '');
-            core.setOutput('labels', JSON.stringify(aggregateLabels(list)));
-            core.setOutput('pulls', JSON.stringify(list));
+            core.setOutput('labels', JSON.stringify(labels));
+            core.setOutput('pulls', JSON.stringify(list.map((p) => ({ number: p.number, labels: p.labels }))));
+
+            // A label release em qualquer PR do intervalo gera estável (docs/versionamento.md).
+            const stable = labels.some((label) => label.toLowerCase() === 'release');
+            await writeNotes({ stable, candidates: tags, start, versionPulls: list });
 
       - name: Calcular a versão
         id: version
@@ -251,13 +346,18 @@ jobs:
           RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
           RELEASE_REUSED: ${{ steps.version.outputs.reused }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          PACKAGE_NAME: ${{ inputs.package_name || github.repository }}
+          NOTES_FILE: ${{ steps.interval.outputs.notes_file }}
         with:
           script: |
+            const fs = require('node:fs');
+            const { releaseTitle, renderReleaseNotes } = require(
+              `${process.env.GITHUB_WORKSPACE}/.elavora/scripts/release-notes.cjs`,
+            );
             const tag = process.env.RELEASE_TAG;
             const sha = process.env.MERGE_SHA;
             const prerelease = process.env.RELEASE_PRERELEASE === 'true';
             const { owner, repo } = context.repo;
+            const repository = process.env.GITHUB_REPOSITORY;
 
             if (process.env.RELEASE_REUSED !== 'true') {
               await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tag}`, sha });
@@ -269,14 +369,18 @@ jobs:
               core.info(`Release ${tag} já existe; reaproveitada.`);
             } catch (error) {
               if (error.status !== 404) throw error;
+              if (!process.env.NOTES_FILE || !fs.existsSync(process.env.NOTES_FILE)) {
+                throw new Error(`dados das notas da release ${tag} ausentes; reexecute o workflow`);
+              }
+              const notes = JSON.parse(fs.readFileSync(process.env.NOTES_FILE, 'utf8'));
               release = (await github.rest.repos.createRelease({
                 owner,
                 repo,
                 tag_name: tag,
-                name: `${process.env.PACKAGE_NAME} ${tag}`,
+                name: releaseTitle({ repository, tag }),
+                body: renderReleaseNotes({ repository, tag, ...notes }),
                 prerelease,
                 make_latest: prerelease ? 'false' : 'true',
-                generate_release_notes: true,
               })).data;
             }
 
