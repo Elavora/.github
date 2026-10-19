@@ -6,6 +6,7 @@
 const { parseTag } = require('./release-version.cjs');
 
 const RELEASE_NOTES_HEADING = '## Notas de release';
+const ATTRIBUTION_PREFIX = '🤖 Generated with';
 const MAX_BODY_LENGTH = 125000;
 
 const GROUPS = Object.freeze([
@@ -58,6 +59,12 @@ function releaseTitle({ repository, tag } = {}) {
   return `${repository} ${tag}`;
 }
 
+// Título de nível 1 ou 2, ou a linha de atribuição dos agentes (regra 4 da doc).
+function endsSection(line) {
+  if (line.startsWith('# ') || line.startsWith('## ')) return true;
+  return line.trim().startsWith(ATTRIBUTION_PREFIX);
+}
+
 function extractReleaseNotes(body) {
   if (typeof body !== 'string') return null;
   const text = body.replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, '');
@@ -67,7 +74,7 @@ function extractReleaseNotes(body) {
   if (start === -1) return null;
   const section = [];
   for (let i = start + 1; i < lines.length; i += 1) {
-    if (lines[i].startsWith('# ') || lines[i].startsWith('## ')) break;
+    if (endsSection(lines[i])) break;
     section.push(lines[i].trimEnd());
   }
   const kept = section.filter((line) => line !== '');
