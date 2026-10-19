@@ -1,7 +1,16 @@
 # Release automática
 
-Cada repositório Elavora tem um workflow chamador pequeno. Nesta primeira fase, só o `.github` e o
-`devcontainers` adotam o fluxo; os pacotes `api-*` ficam para uma fase posterior (ver [Migração](#migração-dos-repositórios)).
+[README](../README.md) · Veja também: [Regras de versão](versionamento.md) · [Labels padrão](labels.md) ·
+[Notas de release](notas-de-release.md) · [Versão da automação](versao-da-automacao.md)
+
+## Em poucas palavras
+
+Ninguém cria versão à mão. Cada merge na `main` gera uma tag e uma GitHub Release sozinho, e o número sai das labels
+do PR.
+
+Para isso, cada repositório Elavora tem um **workflow chamador**: um arquivo pequeno em `.github/workflows/` que só
+chama o workflow central deste repositório. Nesta primeira fase, só o `.github` e o `devcontainers` adotam o fluxo;
+os pacotes `api-*` ficam para uma fase posterior (ver [Migração](#migração-dos-repositórios)).
 Quando um pull request é integrado na `main`, esse chamador aciona o workflow reutilizável
 `Elavora/.github/.github/workflows/release.yml`, que:
 
@@ -10,6 +19,98 @@ Quando um pull request é integrado na `main`, esse chamador aciona o workflow r
    [notas-de-release.md](notas-de-release.md));
 3. envia o evento `repository_dispatch` `tag-created` para o próprio repositório;
 4. nos pacotes Composer, pede ao Packagist que atualize o pacote.
+
+Esta página começa pelo guia (como adotar e o que fazer quando algo falha). Depois vem a referência, com o
+funcionamento interno do workflow.
+
+## Workflow chamador em cada repositório
+
+Para adotar o fluxo, copie o chamador abaixo para o arquivo `.github/workflows/release.yml`, com o nome `Release`.
+
+### Pacotes `api-*`
+
+```yaml
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    uses: Elavora/.github/.github/workflows/release.yml@1.2.0
+    secrets:
+      PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
+```
+
+Troque `1.2.0` pela versão estável atual do `.github`. A versão aparece uma vez só, no `uses`, e o Dependabot
+consegue atualizá-la. Um chamador da `1.0.0` (com `automation_ref` e sem `id-token: write`) continua funcionando,
+desde que `automation_ref` e `uses` tenham o mesmo valor. Um chamador que ainda passa `package_name` também
+continua funcionando: a entrada é ignorada a partir da `1.2.0` e pode ser removida.
+
+### `devcontainers`
+
+Igual ao dos pacotes, mas com `with: { packagist: false }` e sem o bloco `secrets`.
+
+### `.github`
+
+O próprio repositório chama o workflow local, para que cada merge seja versionado com o código do próprio merge:
+
+```yaml
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: write
+      pull-requests: read
+    uses: ./.github/workflows/release.yml
+    with:
+      automation_ref: ${{ github.event.pull_request.merge_commit_sha }}
+      packagist: false
+```
+
+Esse chamador fica em `.github/workflows/auto-release.yml`, porque `release.yml` já é o workflow reutilizável.
+
+### Limitação: PRs de fork
+
+Em `pull_request` vindo de fork, o `GITHUB_TOKEN` é somente leitura e o job de release falha ao criar a tag.
+Os repositórios da organização trabalham com branches internas. Um PR de fork precisa ser recriado a partir de uma
+branch do repositório.
+
+## Recuperação
+
+- **A tag foi criada e a release falhou**: reexecute o workflow. A tag que aponta para o merge é reaproveitada
+  (passo 3 do [Job `release`](#job-release)) e a release que faltava é criada.
+- **O Packagist falhou**: corrija o secret, se for o caso, e use **Re-run failed jobs**.
+- **Tag errada**: o workflow nunca move nem apaga tags. A correção é manual e precisa de análise antes, porque
+  consumidores podem já ter instalado a versão.
+
+As seções a seguir são a referência do fluxo: como o workflow funciona por dentro, os casos de borda e a
+migração dos repositórios. Dois termos aparecem bastante:
+
+- **Tag de partida**: a tag reconhecida de maior versão que já está no histórico do merge.
+  A versão nova olha só os PRs integrados depois dela.
+- **First-parent**: o caminho que segue só a linha principal da `main`, um commit por merge, sem entrar nos
+  commits internos de cada branch. Em `git rev-list`, é a opção `--first-parent`.
 
 ## Versionamento do próprio `.github`
 
@@ -235,79 +336,6 @@ O secret `PACKAGIST_WEBHOOK_URL` fica na organização (Settings > Secrets and v
 repositórios de pacotes. Nunca use uma Actions *variable* para ele. Um secret de repositório com o mesmo nome tem
 prioridade sobre o da organização.
 
-## Workflow chamador em cada repositório
-
-Arquivo `.github/workflows/release.yml`, com o nome `Release`.
-
-### Pacotes `api-*`
-
-```yaml
-name: Release
-
-on:
-  pull_request:
-    types: [closed]
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  release:
-    if: github.event.pull_request.merged == true
-    permissions:
-      contents: write
-      pull-requests: read
-      id-token: write
-    uses: Elavora/.github/.github/workflows/release.yml@1.2.0
-    secrets:
-      PACKAGIST_WEBHOOK_URL: ${{ secrets.PACKAGIST_WEBHOOK_URL }}
-```
-
-Troque `1.2.0` pela versão estável atual do `.github`. A versão aparece uma vez só, no `uses`, e o Dependabot
-consegue atualizá-la. Um chamador da `1.0.0` (com `automation_ref` e sem `id-token: write`) continua funcionando,
-desde que `automation_ref` e `uses` tenham o mesmo valor. Um chamador que ainda passa `package_name` também
-continua funcionando: a entrada é ignorada a partir da `1.2.0` e pode ser removida.
-
-### `devcontainers`
-
-Igual ao dos pacotes, mas com `with: { packagist: false }` e sem o bloco `secrets`.
-
-### `.github`
-
-O próprio repositório chama o workflow local, para que cada merge seja versionado com o código do próprio merge:
-
-```yaml
-name: Release
-
-on:
-  pull_request:
-    types: [closed]
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  release:
-    if: github.event.pull_request.merged == true
-    permissions:
-      contents: write
-      pull-requests: read
-    uses: ./.github/workflows/release.yml
-    with:
-      automation_ref: ${{ github.event.pull_request.merge_commit_sha }}
-      packagist: false
-```
-
-Esse chamador fica em `.github/workflows/auto-release.yml`, porque `release.yml` já é o workflow reutilizável.
-
-### Limitação: PRs de fork
-
-Em `pull_request` vindo de fork, o `GITHUB_TOKEN` é somente leitura e o job de release falha ao criar a tag.
-Os repositórios da organização trabalham com branches internas. Um PR de fork precisa ser recriado a partir de uma
-branch do repositório.
-
 ## Migração dos repositórios
 
 Esta mudança não altera os outros repositórios. A adoção é feita em um PR próprio em cada repositório, em duas
@@ -332,10 +360,8 @@ Fora desta rodada. Fica registrado o que cada grupo terá de fazer:
 Os PRs de adoção abertos para o PR #33 (`packagist-sync.yml` em 31 pacotes) ficam obsoletos com este fluxo.
 As tags `v*` existentes continuam no repositório e no Packagist.
 
-## Recuperação
+## Próxima leitura
 
-- **A tag foi criada e a release falhou**: reexecute o workflow. A tag que aponta para o merge é reaproveitada
-  (passo 3) e a release que faltava é criada.
-- **O Packagist falhou**: corrija o secret, se for o caso, e use **Re-run failed jobs**.
-- **Tag errada**: o workflow nunca move nem apaga tags. A correção é manual e precisa de análise antes, porque
-  consumidores podem já ter instalado a versão.
+- [Regras de versão](versionamento.md): como as labels viram o número da versão.
+- [Versão da automação](versao-da-automacao.md): como fixar a versão do `.github` no `uses` e as permissões do
+  chamador.

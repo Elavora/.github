@@ -1,5 +1,34 @@
 # Labels padrão
 
+[README](../README.md) · Veja também: [Regras de versão](versionamento.md) · [Notas de release](notas-de-release.md) ·
+[Release automática](release.md)
+
+## Guia rápido: qual label usar no meu PR
+
+As labels do PR decidem a versão que sai no merge (ver [Regras de versão](versionamento.md)) e o grupo em que o PR
+aparece nas notas da release (ver [Notas de release](notas-de-release.md)). Escolha pelo que o PR faz:
+
+| O PR... | Label | Efeito na versão |
+| --- | --- | --- |
+| corrige algo que não funciona | `bug` | patch (`1.1.1` → `1.1.2`) |
+| traz uma funcionalidade nova, compatível | `feature` (ou `enhancement`) | minor (`1.1.1` → `1.2.0`) |
+| melhora algo que já existe, sem quebrar nada | `improvement` | minor |
+| quebra a compatibilidade (quem usa precisa mudar o código) | `upgrade` | major (`1.1.1` → `2.0.0`) |
+| reorganiza o código sem mudar o comportamento | `refactor` | patch |
+| mexe só em testes | `tests` | patch |
+| mexe só na documentação | `documentation` | patch |
+| atualiza dependências | `dependencies` | patch |
+| marca algo como obsoleto | `deprecated` | patch |
+| deve publicar uma versão estável | `release`, junto com as outras | estável em vez de beta |
+
+Um PR pode ter várias labels. Vale o maior efeito: `bug` e `feature` juntas dão minor. Sem label nenhuma, sai patch.
+
+Sem `release`, a versão sai como beta (`1.1.2-beta.1`). Use `release` quando quiser publicar a estável.
+
+O resto desta página é a referência: o catálogo completo, o formato do arquivo e como funciona a sincronização.
+
+## Como as labels chegam a cada repositório
+
 Todos os repositórios Elavora usam o mesmo conjunto de labels, definido em um catálogo central
 (`.github/labels.json`, neste repositório) e aplicado pelo workflow reutilizável
 `Elavora/.github/.github/workflows/sync-labels.yml`. O repositório fica com **exatamente** as labels do catálogo:
@@ -178,3 +207,8 @@ os pacotes `api-*` ficam para depois (ver [release.md](release.md#migração-dos
 No próprio `.github`, o chamador é `.github/workflows/auto-sync-labels.yml`, com
 `uses: ./.github/workflows/sync-labels.yml` e `automation_ref: ${{ github.sha }}`, e roda também em `push` na
 `main` quando `.github/labels.json` muda.
+
+## Próxima leitura
+
+- [Notas de release](notas-de-release.md): como as labels agrupam as mudanças na página de cada release.
+- [Release automática](release.md): o workflow que usa as labels a cada merge.
