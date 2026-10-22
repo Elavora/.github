@@ -1,7 +1,56 @@
 # .github
 
-Automação compartilhada da organização Elavora. Os outros repositórios (`devcontainers` e os pacotes `api-*`)
-chamam os workflows reutilizáveis daqui, fixando uma versão deste repositório.
+Automação compartilhada da organização Elavora.
+
+## O que é
+
+Este repositório guarda os workflows do GitHub Actions que todos os repositórios da Elavora usam. Em vez de cada
+repositório manter o próprio CI e o próprio processo de release, ele chama os workflows daqui.
+
+Com isso, todo repositório da organização ganha:
+
+- **release automática**: cada merge na `main` gera uma tag e uma GitHub Release, com o número calculado pelas
+  labels do PR e notas em português;
+- **labels iguais em todos os repositórios**, sincronizadas toda semana a partir de um catálogo único;
+- **qualidade do código PHP** em cada PR dos pacotes `api-*`: formatação automática, lint, análise estática, testes e
+  um comentário no PR com o resultado.
+
+## Para quem é
+
+- **Quem abre PR** num repositório da Elavora: precisa saber só qual label usar. Veja o
+  [guia rápido de labels](docs/labels.md#guia-rápido-qual-label-usar-no-meu-pr).
+- **Quem mantém um repositório** e quer adotar o fluxo: siga os três passos abaixo.
+- **Quem mexe nesta automação**: veja [Desenvolvimento](#desenvolvimento) e a referência de cada documento.
+
+## Como adotar num repositório
+
+1. **Copie os chamadores.** Um chamador é um arquivo pequeno em `.github/workflows/` que só chama o workflow
+   daqui. Copie o de release ([docs/release.md](docs/release.md#workflow-chamador-em-cada-repositório)) e o de labels
+   ([docs/labels.md](docs/labels.md#workflow-chamador-em-cada-repositório)). Nos pacotes `api-*`, copie também o de
+   qualidade ([docs/qualidade.md](docs/qualidade.md#como-adotar-num-repositório-api-)).
+2. **Fixe a versão desta automação.** No `uses` de cada chamador, use uma tag estável deste repositório (por exemplo
+   `@1.2.0`). A versão aparece só ali, e o Dependabot consegue atualizá-la sozinho
+   (ver [docs/versao-da-automacao.md](docs/versao-da-automacao.md)).
+3. **Use as labels nos PRs.** A label decide qual número da versão sobe, e a label `release` publica a estável
+   (ver [docs/labels.md](docs/labels.md#guia-rápido-qual-label-usar-no-meu-pr)).
+
+## Documentação
+
+Leia nesta ordem. Cada documento começa por um guia em linguagem simples e termina com a referência técnica.
+
+1. [Release automática](docs/release.md): o que acontece a cada merge na `main`, o chamador que cada repositório
+   copia e o que fazer quando a release falha.
+2. [Regras de versão](docs/versionamento.md): como as labels do PR viram `X.Y.Z` ou `X.Y.Z-beta.N`, com exemplos
+   do dia a dia.
+3. [Labels padrão](docs/labels.md): qual label usar no PR, o catálogo completo e a sincronização semanal.
+4. [Notas de release](docs/notas-de-release.md): o título e o corpo de cada GitHub Release, a seção "Notas de
+   release" do template de PR e o que muda para as releases já publicadas.
+5. [Versão da automação](docs/versao-da-automacao.md): como os workflows descobrem de qual versão do `.github`
+   baixar os scripts, as permissões dos chamadores e os limites (OIDC, forks).
+6. [Qualidade do código PHP](docs/qualidade.md): o workflow que formata, confere e testa os pacotes `api-*` em cada
+   PR, como cada repositório adota as regras do `elavora/code-standards` e como o devcontainer usa as mesmas regras.
+
+## O que há neste repositório
 
 | O quê | Arquivos | Documentação |
 | --- | --- | --- |
@@ -21,23 +70,6 @@ Este repositório também é versionado pelo próprio fluxo (chamadores `auto-re
 Nos consumidores, use uma tag estável deste repositório no `uses`. A partir da `1.1.0`, a versão aparece só ali: o
 workflow descobre a própria versão pelo token OIDC e o chamador concede `id-token: write`. Assim, o Dependabot
 consegue atualizar a automação sozinho (ver [docs/versao-da-automacao.md](docs/versao-da-automacao.md)).
-
-## Documentação
-
-Leia nesta ordem:
-
-1. [Release automática](docs/release.md): o que acontece a cada merge na `main` e como cada repositório chama o
-   workflow de release.
-2. [Regras de versão](docs/versionamento.md): como as labels do PR viram `X.Y.Z` ou `X.Y.Z-beta.N`.
-3. [Notas de release](docs/notas-de-release.md): o título e o corpo de cada GitHub Release, a seção "Notas de
-   release" do template de PR e o que muda para as releases já publicadas.
-4. [Labels padrão](docs/labels.md): o catálogo e a sincronização semanal.
-5. [Versão da automação](docs/versao-da-automacao.md): como os workflows descobrem de qual versão do `.github`
-   baixar os scripts, as permissões dos chamadores e os limites (OIDC, forks).
-6. [Qualidade do código PHP](docs/qualidade.md): o workflow que formata, confere e testa os pacotes `api-*` em cada
-   PR, como cada repositório adota as regras do `elavora/code-standards` e como o devcontainer usa as mesmas regras.
-7. [Branches temporárias](docs/branches-temporarias.md): como guardar trabalho não salvo em `tmp/` antes de parar e
-   por que a automação ignora essas branches. Vale para pessoas e agentes em todos os repositórios.
 
 ## Desenvolvimento
 

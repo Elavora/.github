@@ -1,5 +1,42 @@
 # Regras de versão
 
+[README](../README.md) · Veja também: [Release automática](release.md) · [Labels padrão](labels.md) ·
+[Notas de release](notas-de-release.md)
+
+## Em poucas palavras
+
+Cada merge na `main` gera uma versão nova. Quem decide o número são as labels do PR:
+
+- a label diz **qual número sobe**: `upgrade` sobe o primeiro (major), `enhancement`, `feature` ou `improvement`
+  sobem o do meio (minor), e qualquer outra label, ou nenhuma, sobe o último (patch);
+- a label `release` diz **se a versão é estável**. Sem ela, sai uma beta (`1.2.0-beta.1`). Com ela, sai a estável
+  (`1.2.0`).
+
+As versões seguem o formato `X.Y.Z`, sem o prefixo `v`.
+
+### Exemplos do dia a dia
+
+Em todas as linhas, a última estável é `1.1.1`. Quando já existe uma beta, ela aparece na situação.
+
+| Situação | Labels do PR | Versão que sai |
+| --- | --- | --- |
+| Corrigi um bug | `bug` | `1.1.2-beta.1` |
+| Corrigi outro bug, e já existe a `1.1.2-beta.1` | `bug` | `1.1.2-beta.2` (a beta seguinte) |
+| Adicionei uma funcionalidade compatível | `feature` | `1.2.0-beta.1` |
+| Quero a estável do que está em beta, e já existe a `1.2.0-beta.3` | `release` | `1.2.0` |
+| Mudei algo de forma incompatível e já quero a estável | `upgrade`, `release` | `2.0.0` |
+| Atualizei a documentação | `documentation` | `1.1.2-beta.1` |
+
+Uma **beta pendente** é uma beta mais nova que a última estável, ainda não promovida. Enquanto ela existir, as
+versões seguintes nunca andam para trás: um `bug` depois de uma `1.2.0-beta.1` gera `1.2.0-beta.2`, e não
+`1.1.2-beta.1`.
+
+Para escolher a label do seu PR, veja o [guia rápido de labels](labels.md#guia-rápido-qual-label-usar-no-meu-pr).
+
+O resto desta página é a referência completa do cálculo, com os casos de borda.
+
+## Labels agregadas
+
 Toda vez que um pull request é integrado na `main` de um repositório Elavora, o workflow central de release
 (ver [release.md](release.md)) cria uma tag e uma GitHub Release. A versão é calculada só a partir de duas
 entradas: as tags que já existem no repositório e as **labels agregadas** de todos os pull requests integrados na
@@ -205,3 +242,8 @@ abaixo deixa de valer:
 | `release` ignorava as outras labels ao promover | `release` com `upgrade` sobre `1.2.0-beta.3` gera `2.0.0` |
 | a versão usava só as labels do PR do evento; com uma execução cancelada na fila, as labels daquele PR se perdiam | a versão usa as labels agregadas de todos os PRs desde a última tag |
 | a estável promovida apontava para o commit da prévia | a estável aponta para o merge do PR com `release` (ver [release.md](release.md)) |
+
+## Próxima leitura
+
+- [Labels padrão](labels.md): o catálogo de labels e o guia rápido para quem abre PR.
+- [Release automática](release.md): o que o workflow faz com a versão calculada aqui.

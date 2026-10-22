@@ -1,5 +1,8 @@
 # Notas de release
 
+[README](../README.md) · Veja também: [Release automática](release.md) · [Regras de versão](versionamento.md) ·
+[Labels padrão](labels.md)
+
 Até a `1.1.0`, cada GitHub Release trazia o "What's Changed" automático do GitHub: o título do PR, o autor e um
 link "Full Changelog", em inglês e sem dizer se a versão é estável, de quanto foi o salto nem o que era novidade ou
 correção. O título também mudava de um repositório para outro (`Elavora/.github 1.1.0`, `elavora/devcontainers 0.3.0`),
