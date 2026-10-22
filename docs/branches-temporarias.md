@@ -17,14 +17,11 @@ Use `tmp/<nome-do-dev>/<nome-qualquer>`.
 - `<nome-do-dev>` é o seu usuário do GitHub, em minúsculas.
 - `<nome-qualquer>` é livre. Prefira algo que diga o assunto, com letras minúsculas, números e hífens.
 
-Os agentes usam o usuário `scriptplayeragent`, ou seja, `tmp/scriptplayeragent/<nome>`.
-
 Exemplos válidos:
 
 | Branch | Por quê |
 | --- | --- |
 | `tmp/felipe-cavalca/cache-redis` | pessoa, com assunto |
-| `tmp/scriptplayeragent/ci-ignora-tmp` | agente |
 | `tmp/felipe-cavalca/wip-2026-10-18` | o nome é livre |
 
 Exemplos que não seguem a regra:
@@ -114,7 +111,7 @@ on:
     branches: [main]
 ```
 
-O padrão `tmp/**` (dois asteriscos) pega qualquer profundidade, como `tmp/scriptplayeragent/nome`. Com um asterisco
+O padrão `tmp/**` (dois asteriscos) pega qualquer profundidade, como `tmp/felipe-cavalca/nome`. Com um asterisco
 só (`tmp/*`), ele pegaria só `tmp/nome`.
 
 Os chamadores de exemplo da documentação não mudam: todos os gatilhos `push` e `pull_request` deles já usam
