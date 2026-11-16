@@ -1077,11 +1077,11 @@ test.describe('findQualityComment', () => {
 
 test.describe('imageRepository', () => {
   const casos = [
-    ['ghcr.io/elavora/php-dev:8.3-latest', 'ghcr.io/elavora/php-dev'],
-    ['ghcr.io/Elavora/php-dev:8.3-0.3.0', 'ghcr.io/elavora/php-dev'],
+    ['ghcr.io/elavora/php-dev:8.4-latest', 'ghcr.io/elavora/php-dev'],
+    ['ghcr.io/Elavora/php-dev:8.4-0.3.0', 'ghcr.io/elavora/php-dev'],
     ['ghcr.io/elavora/php-dev@sha256:abc', 'ghcr.io/elavora/php-dev'],
-    ['ghcr.io/elavora/php-dev:8.3-latest@sha256:abc', 'ghcr.io/elavora/php-dev'],
-    ['localhost:5000/elavora/php-dev:8.3', 'localhost:5000/elavora/php-dev'],
+    ['ghcr.io/elavora/php-dev:8.4-latest@sha256:abc', 'ghcr.io/elavora/php-dev'],
+    ['localhost:5000/elavora/php-dev:8.4', 'localhost:5000/elavora/php-dev'],
     ['localhost:5000/elavora/php-dev', 'localhost:5000/elavora/php-dev'],
     ['', ''],
   ];
@@ -1097,7 +1097,7 @@ test.describe('imageRepository', () => {
   });
 
   test('ignora espaços nas pontas', () => {
-    assert.equal(fn('imageRepository')('  ghcr.io/elavora/php-dev:8.3-latest \n'), 'ghcr.io/elavora/php-dev');
+    assert.equal(fn('imageRepository')('  ghcr.io/elavora/php-dev:8.4-latest \n'), 'ghcr.io/elavora/php-dev');
   });
 
   test('sem tag nem digest → o próprio repositório em minúsculas', () => {
@@ -1106,7 +1106,7 @@ test.describe('imageRepository', () => {
 });
 
 test.describe('imageDigest', () => {
-  const LATEST = 'ghcr.io/elavora/php-dev:8.3-latest';
+  const LATEST = 'ghcr.io/elavora/php-dev:8.4-latest';
 
   test('exemplo da doc: digest do mesmo repositório', () => {
     assert.equal(fn('imageDigest')({ image: LATEST, repoDigests: ['ghcr.io/elavora/php-dev@sha256:aaa'] }), 'sha256:aaa');
@@ -1136,7 +1136,7 @@ test.describe('imageDigest', () => {
   });
 
   test('image com @: o que vem depois do primeiro @, sem espaços nas pontas', () => {
-    assert.equal(fn('imageDigest')({ image: 'ghcr.io/elavora/php-dev:8.3-latest@ sha256:ddd ' }), 'sha256:ddd');
+    assert.equal(fn('imageDigest')({ image: 'ghcr.io/elavora/php-dev:8.4-latest@ sha256:ddd ' }), 'sha256:ddd');
   });
 
   test('image com @ e nada depois → null', () => {
@@ -1188,24 +1188,24 @@ test.describe('imageDigest', () => {
 });
 
 test.describe('renderImageInfo', () => {
-  const LATEST = 'ghcr.io/elavora/php-dev:8.3-latest';
+  const LATEST = 'ghcr.io/elavora/php-dev:8.4-latest';
 
   test('exemplo da doc: com digest', () => {
     assert.equal(
       fn('renderImageInfo')({ image: LATEST, digest: 'sha256:aaa' }),
-      'Imagem do job: `ghcr.io/elavora/php-dev:8.3-latest` · digest `sha256:aaa`\n\n',
+      'Imagem do job: `ghcr.io/elavora/php-dev:8.4-latest` · digest `sha256:aaa`\n\n',
     );
   });
 
   test('exemplo da doc: digest null → digest não disponível', () => {
     assert.equal(
       fn('renderImageInfo')({ image: LATEST, digest: null }),
-      'Imagem do job: `ghcr.io/elavora/php-dev:8.3-latest` · digest não disponível\n\n',
+      'Imagem do job: `ghcr.io/elavora/php-dev:8.4-latest` · digest não disponível\n\n',
     );
   });
 
   test('digest undefined ou vazio → digest não disponível', () => {
-    const esperado = 'Imagem do job: `ghcr.io/elavora/php-dev:8.3-latest` · digest não disponível\n\n';
+    const esperado = 'Imagem do job: `ghcr.io/elavora/php-dev:8.4-latest` · digest não disponível\n\n';
     assert.equal(fn('renderImageInfo')({ image: LATEST }), esperado);
     assert.equal(fn('renderImageInfo')({ image: LATEST, digest: undefined }), esperado);
     assert.equal(fn('renderImageInfo')({ image: LATEST, digest: '' }), esperado);
@@ -1214,7 +1214,7 @@ test.describe('renderImageInfo', () => {
   test('image sem espaços nas pontas', () => {
     assert.equal(
       fn('renderImageInfo')({ image: `  ${LATEST}\n`, digest: 'sha256:aaa' }),
-      'Imagem do job: `ghcr.io/elavora/php-dev:8.3-latest` · digest `sha256:aaa`\n\n',
+      'Imagem do job: `ghcr.io/elavora/php-dev:8.4-latest` · digest `sha256:aaa`\n\n',
     );
   });
 
