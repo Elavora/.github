@@ -102,11 +102,11 @@ test.describe('php-quality.yml: entradas', () => {
     assert.deepEqual(names, ['automation_ref', 'composer_audit', 'coverage_min', 'dependencies', 'image']);
   });
 
-  test('image: string, opcional, padrão ghcr.io/elavora/php-dev:8.3-latest', () => {
+  test('image: string, opcional, padrão ghcr.io/elavora/php-dev:8.4-latest', () => {
     const b = input('image');
     assert.equal(scalar(b, 'type'), 'string');
     assert.notEqual(scalar(b, 'required'), 'true');
-    assert.equal(scalar(b, 'default'), 'ghcr.io/elavora/php-dev:8.3-latest');
+    assert.equal(scalar(b, 'default'), 'ghcr.io/elavora/php-dev:8.4-latest');
   });
 
   test('coverage_min: number, opcional, padrão 80', () => {

@@ -15,7 +15,7 @@ on:
         description: Imagem do job (use só imagens ghcr.io/elavora/php-dev).
         required: false
         type: string
-        default: ghcr.io/elavora/php-dev:8.3-latest
+        default: ghcr.io/elavora/php-dev:8.4-latest
       coverage_min:
         description: Cobertura mínima em %. Abaixo dela, o relatório mostra aviso. 0 desliga a etapa.
         required: false
